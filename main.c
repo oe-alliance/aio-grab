@@ -607,6 +607,14 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			sscanf(buf,"%x",&res); 
 		fclose(pipe);
 
+		if (!adr || !adr2)
+		{
+			*xres = stride;
+			*yres = res;
+			memset(video, 0, *xres * *yres * 3);
+			return;
+		}
+
 		//printf("Stride: %d Res: %d\n",stride,res);
 		//printf("Adr: %X Adr2: %X OFS: %d %d\n",adr,adr2,ofs,ofs2);
 
