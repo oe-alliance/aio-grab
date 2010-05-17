@@ -621,11 +621,13 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		luma = (unsigned char *)malloc(stride*(ofs));
 		chroma = (unsigned char *)malloc(stride*(ofs2+64));	
 
+		int memory_tmp_size = 0;
 		// grabbing luma & chroma plane from the decoder memory
 		if (stb_type == BRCM7401 || stb_type == BRCM7405)
 		{
 			// on dm800/dm500hd we have direct access to the decoder memory
-			if(!(memory_tmp = (unsigned char*)mmap(0, offset + stride*(ofs2+64), PROT_READ, MAP_SHARED, mem_fd, adr)))
+			memory_tmp_size = offset + stride*(ofs2+64);
+			if(!(memory_tmp = (unsigned char*)mmap(0, memory_tmp_size, PROT_READ, MAP_SHARED, mem_fd, adr)))
 			{
 				printf("Mainmemory: <Memmapping failed>\n");
 				return;
@@ -638,7 +640,8 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		}
 		else if (stb_type == BRCM7400 || stb_type == BRCM7335)
 		{
-			if (!(memory_tmp = (unsigned char*)mmap(0, DMA_BLOCKSIZE + 0x1000, PROT_READ|PROT_WRITE, MAP_SHARED, mem_fd, SPARE_RAM)))
+			memory_tmp_size = DMA_BLOCKSIZE + 0x1000;
+			if (!(memory_tmp = (unsigned char*)mmap(0, memory_tmp_size, PROT_READ|PROT_WRITE, MAP_SHARED, mem_fd, SPARE_RAM)))
 			{
 				printf("Mainmemory: <Memmapping failed>\n");
 				return;
@@ -720,10 +723,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 				dat1+=stride;
 			}
 		}
-		if (stb_type == BRCM7401 || stb_type == BRCM7405)
-			munmap(memory_tmp, offset + stride*(ofs2+64));
-		else if (stb_type == BRCM7400)
-			munmap(memory_tmp, DMA_BLOCKSIZE + 0x1000);
+		munmap(memory_tmp, memory_tmp_size);
 
 		int count = (stride*ofs) >> 2;
 		unsigned char* p = luma;
