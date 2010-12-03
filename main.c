@@ -135,7 +135,7 @@ int main(int argc, char **argv) {
 		{
 			while (fgets(buf,sizeof(buf),pipe))
 			{
-				if (strcasestr(buf,"DM500HD"))
+				if (strcasestr(buf,"DM500HD") || strcasestr(buf,"DM800SE"))
 				{
 					stb_type = BRCM7405;
 					break;
@@ -165,7 +165,49 @@ int main(int argc, char **argv) {
 			}
 		}
 	}
-
+	pipe = fopen("/proc/stb/info/chipset", "r");
+	if (pipe)
+	{
+		while (fgets(buf,sizeof(buf),pipe))
+		{
+			if (strcasestr(buf,"7400"))
+			{
+				stb_type = BRCM7400;
+				break;
+			}
+			else if (strcasestr(buf,"7401"))
+			{
+				stb_type = BRCM7401;
+				break;
+			}
+			else if (strcasestr(buf,"7405"))
+			{
+				stb_type = BRCM7405;
+				break;
+			}
+			else if (strcasestr(buf,"7335"))
+			{
+				stb_type = BRCM7335;
+				break;
+			}
+			else if (strcasestr(buf,"XILLEON"))
+			{
+				stb_type = XILLEON;
+				break;
+			}
+			else if (strcasestr(buf,"PALLAS"))
+			{
+				stb_type = PALLAS;
+				break;
+			}
+			else if (strcasestr(buf,"VULCAN"))
+			{
+				stb_type = VULCAN;
+				break;
+			}
+		}
+		fclose(pipe);
+	}
 	if (stb_type == UNKNOWN)
 	{
 		printf("Unknown STB .. quit.\n");
