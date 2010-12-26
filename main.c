@@ -367,7 +367,7 @@ int main(int argc, char **argv) {
 	{
 		xres=xres_o;
 		yres=yres_o;
-	} else if (xres_o == xres_v && yres_o == yres_v)
+	} else if (xres_o == xres_v && yres_o == yres_v && !dst_top && !dst_left && !dst_width && !dst_height)
 	{
 		xres=xres_v;
 		yres=yres_v;
