@@ -128,6 +128,22 @@ int main(int argc, char **argv) {
 	}
 	pclose(pipe);
 
+	if (stb_type == BRCM7401) // All Broadcom STB's use the same framebuffer string, so fall back to /proc/stb/info/vumodel for detecting the Vu+Duo
+	{
+		pipe = fopen("/proc/stb/info/vumodel", "r");
+		if (pipe)
+		{
+			while (fgets(buf,sizeof(buf),pipe))
+			{
+				if (strcasestr(buf,"duo"))
+				{
+					stb_type = BRCM7335;
+					break;
+				}
+			}
+			fclose(pipe);
+		}
+	}
 	if (stb_type == BRCM7401) // All Broadcom Dreamboxes use the same framebuffer string, so fall back to /proc/stb/info/model for detecting DM8000/DM500HD
 	{
 		pipe = fopen("/proc/stb/info/model", "r");
