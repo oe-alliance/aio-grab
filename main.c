@@ -698,6 +698,12 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		}
 		else if (stb_type == BRCM7400 || stb_type == BRCM7335)
 		{
+			int tmp_size = offset + stride*(ofs2+64);
+			if (tmp_size > 2 * DMA_BLOCKSIZE)
+			{
+				printf("Got invalid stride value from the decoder: %d\n", stride);
+				return;
+			}
 			memory_tmp_size = DMA_BLOCKSIZE + 0x1000;
 			if (!(memory_tmp = (unsigned char*)mmap(0, memory_tmp_size, PROT_READ|PROT_WRITE, MAP_SHARED, mem_fd, SPARE_RAM)))
 			{
@@ -713,7 +719,6 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 
 			int i = 0;
 			int tmp_len = DMA_BLOCKSIZE;
-			int tmp_size = offset + stride*(ofs2+64);
 			for (i=0; i < tmp_size; i += DMA_BLOCKSIZE)
 			{
 				
