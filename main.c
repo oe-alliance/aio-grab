@@ -124,7 +124,7 @@ int main(int argc, char **argv) {
 		if (strcasestr(buf,"VULCAN")) stb_type=VULCAN;
 		if (strcasestr(buf,"PALLAS")) stb_type=PALLAS;
 		if (strcasestr(buf,"XILLEON")) stb_type=XILLEON;
-		if (strcasestr(buf,"BCM7401") || strcasestr(buf,"BCMFB")) stb_type=BRCM7401;
+		if (strcasestr(buf,"BCM7401") || strcasestr(buf,"BCMFB") || strcasestr(buf,"BRCMFB")) stb_type=BRCM7401;
 	}
 	pclose(pipe);
 
@@ -151,7 +151,7 @@ int main(int argc, char **argv) {
 		{
 			while (fgets(buf,sizeof(buf),pipe))
 			{
-				if (strcasestr(buf,"DM500HD") || strcasestr(buf,"DM800SE"))
+				if (strcasestr(buf,"DM500HD") || strcasestr(buf,"DM800SE") || strcasestr(buf,"Gigablue"))
 				{
 					stb_type = BRCM7405;
 					break;
