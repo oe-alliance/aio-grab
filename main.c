@@ -549,7 +549,7 @@ int main(int argc, char **argv) {
 		if (output_bytes == 3) // swap bgr<->rgb
 		{
 			int y;
-			#pragma omp parallel for private(xres1, xres2, x, x2)
+			#pragma omp parallel for shared(output)
 			for (y=0; y<yres; y++)
 			{
 				int xres1=y*xres*3;
@@ -565,7 +565,7 @@ int main(int argc, char **argv) {
 		else // swap bgr<->rgb and eliminate alpha channel jpgs are always saved with 24bit without alpha channel
 		{
 			int y;
-			#pragma omp parallel for private(xres1, xres2, x, x2)
+			#pragma omp parallel for shared(output)
 			for (y=0; y<yres; y++)
 			{
 				int xres1=y*xres*3;
@@ -1317,7 +1317,7 @@ void fast_resize(unsigned char *source, unsigned char *dest, int xsource, int ys
 	const int x_ratio = (int)((xsource<<16)/xdest) ;
 	const int y_ratio = (int)((ysource<<16)/ydest) ;
 	int i;
-	#pragma omp parallel for private(y2_xsource, i_xdest, j, x2, y2_x2_colors, i_x_colors, c) shared (dest, source)
+	#pragma omp parallel for shared (dest, source)
 	for (i=0; i<ydest; i++)
 	{
 		int y2_xsource = ((i*y_ratio)>>16)*xsource; // do some precalculations
