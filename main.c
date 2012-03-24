@@ -546,29 +546,34 @@ int main(int argc, char **argv) {
 	} else 
 	{
 		// write jpg
-		int x,y,xres1,xres2,x2;
 		if (output_bytes == 3) // swap bgr<->rgb
 		{
+			int y;
+			#pragma omp parallel for private(xres1, xres2, x, x2)
 			for (y=0; y<yres; y++)
 			{
-				xres1=y*xres*3;
-				xres2=xres1+2;
+				int xres1=y*xres*3;
+				int xres2=xres1+2;
+				int x;
 				for (x=0; x<xres; x++)
 				{
-					x2=x*3;
+					int x2=x*3;
 					SWAP(output[x2+xres1],output[x2+xres2]);
 				}
 			}
 		}
 		else // swap bgr<->rgb and eliminate alpha channel jpgs are always saved with 24bit without alpha channel
 		{
+			int y;
+			#pragma omp parallel for private(xres1, xres2, x, x2)
 			for (y=0; y<yres; y++)
 			{
-				xres1=y*xres*3;
-				xres2=xres1+2;				
+				int xres1=y*xres*3;
+				int xres2=xres1+2;
+				int x;
 				for (x=0; x<xres; x++)
 				{
-					x2=x*3;
+					int x2=x*3;
 					memcpy(output+x2+xres1,output+x*4+y*xres*4,3);
 					SWAP(output[x2+xres1],output[x2+xres2]);
 				}
@@ -1307,53 +1312,88 @@ void smooth_resize(unsigned char *source, unsigned char *dest, int xsource, int 
 }
 
 // "nearest neighbor" pixmap resizing
-
 void fast_resize(unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors)
 {
-    int x_ratio = (int)((xsource<<16)/xdest) ;
-    int y_ratio = (int)((ysource<<16)/ydest) ;
-
-	int x2, y2, c, i ,j, y2_xsource, i_xdest, y2_x2_colors, i_x_colors;
-    for (i=0;i<ydest;i++) 
+	const int x_ratio = (int)((xsource<<16)/xdest) ;
+	const int y_ratio = (int)((ysource<<16)/ydest) ;
+	int i;
+	#pragma omp parallel for private(y2_xsource, i_xdest, j, x2, y2_x2_colors, i_x_colors, c) shared (dest, source)
+	for (i=0; i<ydest; i++)
 	{
-		y2_xsource = ((i*y_ratio)>>16)*xsource; // do some precalculations
-		i_xdest = i*xdest;
-        for (j=0;j<xdest;j++) 
+		int y2_xsource = ((i*y_ratio)>>16)*xsource; // do some precalculations
+		int i_xdest = i*xdest;
+		int j;
+		for (j=0; j<xdest; j++)
 		{
-            x2 = ((j*x_ratio)>>16) ;
-			y2_x2_colors = (y2_xsource+x2)*colors;
-			i_x_colors = (i_xdest+j)*colors;
-            for (c=0; c<colors; c++)
+			int x2 = ((j*x_ratio)>>16) ;
+			int y2_x2_colors = (y2_xsource+x2)*colors;
+			int i_x_colors = (i_xdest+j)*colors;
+			int c;
+			for (c=0; c<colors; c++)
 				dest[i_x_colors + c] = source[y2_x2_colors + c] ;
 		}
 	}
 }
 
 // combining pixmaps by using an alphamap
-
 void combine(unsigned char *output, unsigned char *video, unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres)
 {
-	int x, y, apos,a2,pos1,vpos1;
-
-	apos=pos1=vpos1=0;
-	for (y = 0; y < yres; y++)
+	int pos1 = 0;
+	int vpos1 = 0;
+	const int vbottom = vtop + vheight;
+	const int vright = vleft + vwidth;
+	int y;
+	for (y = 0; y < vtop; y++)
 	{
+		int x;
 		for (x = 0; x < xres; x++)
 		{
-			apos=pos1+3;
-			a2 = 0xFF - osd[apos];
-			if (y >= vtop && x >= vleft && y < vtop + vheight && x < vleft + vwidth)
-			{
-				output[vpos1++] =  ( ( video[((y - vtop) * vwidth + (x - vleft)) * 3] * a2 ) + ( osd[pos1++] * osd[apos] ) ) >>8;
-				output[vpos1++] =  ( ( video[((y - vtop) * vwidth + (x - vleft)) * 3 + 1] * a2 ) + ( osd[pos1++] * osd[apos] ) ) >>8;
-				output[vpos1++] =  ( ( video[((y - vtop) * vwidth + (x - vleft)) * 3 + 2] * a2 ) + ( osd[pos1++] * osd[apos] ) ) >>8;
-			}
-			else
-			{
-				output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
-				output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
-				output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
-			}
+			int apos=pos1+3;
+			output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
+			output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
+			output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
+			pos1++; // skip alpha byte
+		}
+	}
+	for (y = vtop; y < vbottom; y++)
+	{
+		int x;
+		for (x = 0; x < vleft; x++)
+		{
+			int apos=pos1+3;
+			output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
+			output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
+			output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
+			pos1++; // skip alpha byte
+		}
+		for (x = vleft; x < vright; x++)
+		{
+			int apos=pos1+3;
+			int a2 = 0xFF - osd[apos];
+			int pixel = ((y - vtop) * vwidth + (x - vleft)) * 3;
+			output[vpos1++] =  ( ( video[pixel + 0] * a2 ) + ( osd[pos1++] * osd[apos] ) ) >>8;
+			output[vpos1++] =  ( ( video[pixel + 1] * a2 ) + ( osd[pos1++] * osd[apos] ) ) >>8;
+			output[vpos1++] =  ( ( video[pixel + 2] * a2 ) + ( osd[pos1++] * osd[apos] ) ) >>8;
+			pos1++; // skip alpha byte
+		}
+		for (x = vright; x < xres; x++)
+		{
+			int apos=pos1+3;
+			output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
+			output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
+			output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
+			pos1++; // skip alpha byte
+		}
+	}
+	for (y = vbottom; y < yres; y++)
+	{
+		int x;
+		for (x = 0; x < xres; x++)
+		{
+			int apos=pos1+3;
+			output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
+			output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
+			output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
 			pos1++; // skip alpha byte
 		}
 	}
