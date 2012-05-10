@@ -36,7 +36,6 @@ Feel free to use the code for your own projects. See LICENSE file for details.
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <linux/types.h>
-#include <linux/videodev.h>
 #include <linux/fb.h>
 #include "png.h"
 #include "jpeglib.h"
