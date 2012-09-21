@@ -82,8 +82,8 @@ void fast_resize(unsigned char *source, unsigned char *dest, int xsource, int ys
 void (*resize)(unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
 void combine(unsigned char *output, unsigned char *video, unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
-enum {UNKNOWN,PALLAS,VULCAN,XILLEON,BRCM7400,BRCM7401,BRCM7405,BRCM7335};
-char *stb_name[]={"unknown","Pallas","Vulcan","Xilleon","Brcm7400","Brcm7401","Brcm7405","Brcm7335"};
+enum {UNKNOWN,PALLAS,VULCAN,XILLEON,BRCM7400,BRCM7401,BRCM7403,BRCM7405,BRCM7335};
+char *stb_name[]={"unknown","Pallas","Vulcan","Xilleon","Brcm7400","Brcm7401","Brcm7403","Brcm7405","Brcm7335"};
 int stb_type=UNKNOWN;
 
 // main program
@@ -123,7 +123,8 @@ int main(int argc, char **argv) {
 		if (strcasestr(buf,"VULCAN")) stb_type=VULCAN;
 		if (strcasestr(buf,"PALLAS")) stb_type=PALLAS;
 		if (strcasestr(buf,"XILLEON")) stb_type=XILLEON;
-		if (strcasestr(buf,"BCM7401") || strcasestr(buf,"BCMFB") || strcasestr(buf,"BRCMFB")) stb_type=BRCM7401;
+		if (strcasestr(buf,"BCM7401") || strcasestr(buf,"BCMFB") || strcasestr(buf,"BRCMFB") || strcasestr(buf,"eboxfb")) stb_type=BRCM7401;
+		if (strcasestr(buf,"eboxfb")) stb_type=BRCM7403;
 	}
 	pclose(pipe);
 
@@ -640,7 +641,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 	char buf[256];
 	FILE *pipe;
 
-	if (stb_type == BRCM7401 || stb_type == BRCM7400 || stb_type == BRCM7405 || stb_type == BRCM7335)
+	if (stb_type == BRCM7401 || stb_type == BRCM7403 || stb_type == BRCM7400 || stb_type == BRCM7405 || stb_type == BRCM7335)
 	{
 		// grab brcm7401 pic from decoder memory
 		const unsigned char* data = (unsigned char*)mmap(0, 100, PROT_READ, MAP_SHARED, mem_fd, 0x10100000);
@@ -685,7 +686,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 
 		int memory_tmp_size = 0;
 		// grabbing luma & chroma plane from the decoder memory
-		if (stb_type == BRCM7401 || stb_type == BRCM7405)
+		if (stb_type == BRCM7401 || stb_type == BRCM7403 || stb_type == BRCM7405)
 		{
 			// on dm800/dm500hd we have direct access to the decoder memory
 			memory_tmp_size = offset + stride*(ofs2+64);
