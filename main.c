@@ -767,7 +767,11 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			}
 
 			munmap((void *)mem_dma, 0x1000);
-			memory_tmp+=0x1000;
+			/* unmap the dma descriptor page, we won't need it anymore */
+			munmap((void *)memory_tmp, 0x1000);
+			/* adjust start and size of the remaining memory_tmp mmap */
+			memory_tmp += 0x1000;
+			memory_tmp_size -= 0x1000;
 		}
 
 		t=t2=dat1=0;
