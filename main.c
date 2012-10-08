@@ -5,20 +5,20 @@ Based on the work of Seddi
 Contact: seddi@ihad.tv / http://www.ihad.tv
 
 This standalone binary will grab the video-picture convert it from
-yuv to rgb and resize it, if neccesary, to the same size as the framebuffer or 
+yuv to rgb and resize it, if neccesary, to the same size as the framebuffer or
 vice versa. For the DM7025 (Xilleon) and DM800/DM8000/DM500HD (Broadcom) the video will be
 grabbed directly from the decoder memory.
-It also grabs the framebuffer picture in 32Bit, 16Bit or in 8Bit mode with the 
-correct colortable in 8Bit mode from the main graphics memory, because the 
-FBIOGETCMAP is buggy on Vulcan/Pallas boxes and didnt give you the correct color 
+It also grabs the framebuffer picture in 32Bit, 16Bit or in 8Bit mode with the
+correct colortable in 8Bit mode from the main graphics memory, because the
+FBIOGETCMAP is buggy on Vulcan/Pallas boxes and didnt give you the correct color
 map.
 Finally it will combine the pixmaps to one final picture by using the framebuffer
-alphamap and save it as bmp, jpeg or png file. So you will get the same picture 
+alphamap and save it as bmp, jpeg or png file. So you will get the same picture
 as you can see on your TV Screen.
 
 There are a few command line switches, use "grab -h" to get them listed.
 
-A special Thanx to tmbinc and ghost for the needed decoder memory information and 
+A special Thanx to tmbinc and ghost for the needed decoder memory information and
 the great support.
 
 Feel free to use the code for your own projects. See LICENSE file for details.
@@ -97,19 +97,19 @@ int main(int argc, char **argv) {
 
 	// we use fast resize as standard now
 	resize = &fast_resize;
-	
+
 	osd_only=video_only=use_osd_res=width=use_png=use_jpg=no_aspect=use_letterbox=0;
 	jpg_quality=50;
 	aspect=1;
 
 	int dst_left = 0, dst_top = 0, dst_width = 0, dst_height = 0;
-	
+
 	unsigned char *video, *osd, *output;
 	int output_bytes=3;
-	
+
 	char filename[256];
 	sprintf(filename,"/tmp/screenshot.bmp");
-	
+
 	// detect STB
 	char buf[256];
 	FILE *pipe = fopen("/proc/fb","r");
@@ -209,7 +209,7 @@ int main(int argc, char **argv) {
 			{
 				stb_type = BRCM7358;
 				break;
-			}			
+			}
 			else if (strcasestr(buf,"XILLEON"))
 			{
 				stb_type = XILLEON;
@@ -237,7 +237,7 @@ int main(int argc, char **argv) {
 	{
 		printf("Detected STB: %s\n", stb_name[stb_type]);
 	}
-	
+
 	// process command line
 	while ((c = getopt (argc, argv, "dhj:lbnopr:v")) != -1)
 	{
@@ -254,7 +254,7 @@ int main(int argc, char **argv) {
 				printf("-r (size) resize to a fixed width, maximum: 1920\n");
 				printf("-l always 4:3, create letterbox if 16:9\n");
 				printf("-b use bicubic picture resize (slow but smooth)\n");
-				printf("-j (quality) produce jpg files instead of bmp (quality 0-100)\n");	
+				printf("-j (quality) produce jpg files instead of bmp (quality 0-100)\n");
 				printf("-p produce png files instead of bmp\n");
 				printf("-h this help screen\n\n");
 
@@ -264,7 +264,7 @@ int main(int argc, char **argv) {
 				break;
 			case 'o': // OSD only
 				osd_only=1;
-				video_only=0;	
+				video_only=0;
 				break;
 			case 'v': // Video only
 				video_only=1;
@@ -287,10 +287,10 @@ int main(int argc, char **argv) {
 				break;
 			case 'b': // use bicubic resizing
 				resize = &smooth_resize;
-				break;			
+				break;
 			case 'p': // use png file format
 				use_png=1;
-				use_jpg=0;	
+				use_jpg=0;
 				sprintf(filename,"/tmp/screenshot.png");
 				break;
 			case 'j': // use jpg file format
@@ -302,7 +302,7 @@ int main(int argc, char **argv) {
 			case 'n':
 				no_aspect=1;
 				break;
-		} 
+		}
 	}
 	if (optind < argc) // filename
 		sprintf(filename,"%s", argv[optind]);
@@ -310,23 +310,23 @@ int main(int argc, char **argv) {
 	int mallocsize=1920*1080;
 	if (stb_type == VULCAN || stb_type == PALLAS)
 		mallocsize=720*576;
-	
+
 	video = (unsigned char *)malloc(mallocsize*3);
-	osd = (unsigned char *)malloc(mallocsize*4);	
+	osd = (unsigned char *)malloc(mallocsize*4);
 
 	if ((stb_type == VULCAN || stb_type == PALLAS) && width > 720)
 		mallocsize=width*(width * 0.8 + 1);
-	
+
 	output = (unsigned char *)malloc(mallocsize*4);
 
 	// get osd
 	if (!video_only)
 		getosd(osd,&xres_o,&yres_o);
-	
+
 	// get video
 	if (!osd_only)
 		getvideo(video,&xres_v,&yres_v);
-	
+
 	// get aspect ratio
 	if (stb_type == VULCAN || stb_type == PALLAS)
 	{
@@ -334,7 +334,7 @@ int main(int argc, char **argv) {
 		if (pipe)
 		{
 			while (fgets(buf,sizeof(buf),pipe))
-				sscanf(buf,"A_RATIO: %d",&aspect); 
+				sscanf(buf,"A_RATIO: %d",&aspect);
 			fclose(pipe);
 		}
 	} else
@@ -343,7 +343,7 @@ int main(int argc, char **argv) {
 		if (pipe)
 		{
 			while (fgets(buf,sizeof(buf), pipe))
-				sscanf(buf,"%x",&aspect); 
+				sscanf(buf,"%x",&aspect);
 			fclose(pipe);
 		}
 		pipe = fopen("/proc/stb/vmpeg/0/dst_width", "r");
@@ -377,7 +377,7 @@ int main(int argc, char **argv) {
 		if (dst_width == 720) dst_width = 0;
 		if (dst_height == 576) dst_height = 0;
 	}
-	
+
 	// resizing
  	if (video_only)
 	{
@@ -437,7 +437,7 @@ int main(int argc, char **argv) {
 			memcpy(video, output, dst_width * dst_height * 3);
 		}
 	}
-	
+
 
 	// merge video and osd if neccessary
 	if (osd_only)
@@ -447,13 +447,13 @@ int main(int argc, char **argv) {
 	}
 	else if (video_only)
 		memcpy(output,video,xres*yres*3);
-	else 
+	else
 	{
 		printf("Merge Video with Framebuffer ...\n");
 		combine(output, video, osd, dst_left, dst_top, dst_width ? dst_width : xres, dst_height ? dst_height : yres, xres, yres);
 	}
 
-	
+
 	// resize to specific width ?
 	if (width)
 	{
@@ -463,7 +463,7 @@ int main(int argc, char **argv) {
 		xres=width;
 		memcpy(output,osd,xres*yres*output_bytes);
 	}
-	
+
 
 	// correct aspect ratio
 	if (!no_aspect && aspect == 3 && ((float)xres/(float)yres)<1.5)
@@ -473,14 +473,14 @@ int main(int argc, char **argv) {
 		yres/=1.42;
 		memcpy(output,osd,xres*yres*output_bytes);
 	}
-	
-	
+
+
 	// use letterbox ?
 	if (use_letterbox && xres*0.8 != yres && xres*0.8 <= 1080)
 	{
 		int yres_neu;
 		yres_neu=xres*0.8;
-		printf("Create letterbox %d x %d ...\n",xres,yres_neu);		
+		printf("Create letterbox %d x %d ...\n",xres,yres_neu);
 		if (yres_neu > yres)
 		{
 			int ofs;
@@ -491,13 +491,13 @@ int main(int argc, char **argv) {
 		}
 		yres=yres_neu;
 	}
-	
-	
+
+
 	// saving picture
 	printf("Saving %d bit %s ...\n",(use_jpg?3*8:output_bytes*8),filename);
 	FILE *fd2 = fopen(filename, "wr");
 	if (!fd2) return 1;
-	
+
 	if (!use_png && !use_jpg)
 	{
 		// write bmp
@@ -517,18 +517,18 @@ int main(int argc, char **argv) {
 #undef PUT16
 #undef PUT8
 		fwrite(hdr, 1, i, fd2);
-		
+
 		int y;
 		for (y=yres-1; y>=0 ; y-=1) {
 			fwrite(output+(y*xres*output_bytes),xres*output_bytes,1,fd2);
 		}
 	} else if (use_png)
-	{	
+	{
 		// write png
 		png_bytep *row_pointers;
 		png_structp png_ptr;
 		png_infop info_ptr;
-	  
+
 		png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, (png_voidp)NULL, (png_error_ptr)NULL, (png_error_ptr)NULL);
 		info_ptr = png_create_info_struct(png_ptr);
 		png_init_io(png_ptr, fd2);
@@ -538,16 +538,16 @@ int main(int argc, char **argv) {
 		int y;
 		for (y=0; y<yres; y++)
 			row_pointers[y]=output+(y*xres*output_bytes);
-		
+
 		png_set_bgr(png_ptr);
 		png_set_IHDR(png_ptr, info_ptr, xres, yres, 8, ((output_bytes<4)?PNG_COLOR_TYPE_RGB:PNG_COLOR_TYPE_RGBA) , PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
 		png_write_info(png_ptr, info_ptr);
 		png_write_image(png_ptr, row_pointers);
 		png_write_end(png_ptr, info_ptr);
 		png_destroy_write_struct(&png_ptr, &info_ptr);
-		
+
 		free(row_pointers);
-	} else 
+	} else
 	{
 		// write jpg
 		if (output_bytes == 3) // swap bgr<->rgb
@@ -586,22 +586,22 @@ int main(int argc, char **argv) {
 
 		struct jpeg_compress_struct cinfo;
 		struct jpeg_error_mgr jerr;
-		JSAMPROW row_pointer[1];	
-		int row_stride;		
+		JSAMPROW row_pointer[1];
+		int row_stride;
 		cinfo.err = jpeg_std_error(&jerr);
 
 		jpeg_create_compress(&cinfo);
 		jpeg_stdio_dest(&cinfo, fd2);
-		cinfo.image_width = xres; 	
+		cinfo.image_width = xres;
 		cinfo.image_height = yres;
-		cinfo.input_components = 3;	
+		cinfo.input_components = 3;
 		cinfo.in_color_space = JCS_RGB;
 		cinfo.dct_method = JDCT_IFAST;
 		jpeg_set_defaults(&cinfo);
 		jpeg_set_quality(&cinfo,jpg_quality, TRUE);
 		jpeg_start_compress(&cinfo, TRUE);
 		row_stride = xres * 3;
-		while (cinfo.next_scanline < cinfo.image_height) 
+		while (cinfo.next_scanline < cinfo.image_height)
 		{
 			row_pointer[0] = & output[cinfo.next_scanline * row_stride];
 			(void) jpeg_write_scanlines(&cinfo, row_pointer, 1);
@@ -609,12 +609,12 @@ int main(int argc, char **argv) {
 		jpeg_finish_compress(&cinfo);
 		jpeg_destroy_compress(&cinfo);
 	}
-	
+
 	fclose(fd2);
-	
-	// Thats all folks 
+
+	// Thats all folks
 	printf("... Done !\n");
-	
+
 	// clean up
 	free(video);
 	free(osd);
@@ -670,19 +670,19 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		{
 			//vert_start=data[0x1B]<<8|data[0x1A];
 			//vert_end=data[0x19]<<8|data[0x18];
-			stride=data[0x15]<<8|data[0x14];	
+			stride=data[0x15]<<8|data[0x14];
 			ofs=(data[0x28]<<8|data[0x27])>>4; // luma lines
 			ofs2=(data[0x2c]<<8|data[0x2b])>>4;// chroma lines
 			adr=(data[0x1f]<<24|data[0x1e]<<16|data[0x1d]<<8|data[0x1c])&0xFFFFFF00; // start of  videomem
 			adr2=(data[0x23]<<24|data[0x22]<<16|data[0x21]<<8|data[0x20])&0xFFFFFF00;
 		}
 		offset=adr2-adr;
-		
+
 		munmap((void*)data, 100);
 
 		pipe=fopen("/proc/stb/vmpeg/0/yres","r");
 		while (fgets(buf,sizeof(buf),pipe))
-			sscanf(buf,"%x",&res); 
+			sscanf(buf,"%x",&res);
 		fclose(pipe);
 
 		if (!adr || !adr2)
@@ -697,7 +697,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		//printf("Adr: %X Adr2: %X OFS: %d %d\n",adr,adr2,ofs,ofs2);
 
 		luma = (unsigned char *)malloc(stride*(ofs));
-		chroma = (unsigned char *)malloc(stride*(ofs2+64));	
+		chroma = (unsigned char *)malloc(stride*(ofs2+64));
 
 		int memory_tmp_size = 0;
 		// grabbing luma & chroma plane from the decoder memory
@@ -710,11 +710,11 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 				printf("Mainmemory: <Memmapping failed>\n");
 				return;
 			}
-			
+
 			usleep(50000); 	// we try to get a full picture, its not possible to get a sync from the decoder so we use a delay
 							// and hope we get a good timing. dont ask me why, but every DM800 i tested so far produced a good
 							// result with a 50ms delay
-			
+
 		}
 		else if (stb_type == BRCM7400 || stb_type == BRCM7335)
 		{
@@ -741,14 +741,14 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			int tmp_len = DMA_BLOCKSIZE;
 			for (i=0; i < tmp_size; i += DMA_BLOCKSIZE)
 			{
-				
+
 				unsigned long *descriptor = (void*)memory_tmp;
 
 				if (i + DMA_BLOCKSIZE > tmp_size)
 					tmp_len = tmp_size - i;
 
 				//printf("DMACopy: %x (%d) size: %d\n", adr+i, i, tmp_len);
-				
+
 				descriptor[0] = /* READ */ adr + i;
 				descriptor[1] = /* WRITE */ SPARE_RAM + 0x1000;
 				descriptor[2] = 0x40000000 | /* LEN */ tmp_len;
@@ -763,7 +763,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 				while (mem_dma[5] == 1)
 					usleep(2);
 				mem_dma[2] = 0;
-		
+
 			}
 
 			munmap((void *)mem_dma, 0x1000);
@@ -788,7 +788,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 				xsub=stride-xtmp;
 
 			dat1=xtmp;
-			for (ytmp = 0; ytmp < ofs; ytmp++) 
+			for (ytmp = 0; ytmp < ofs; ytmp++)
 			{
 				memcpy(luma+dat1,memory_tmp+t,xsub); // luma
 				t+=chr_luma_stride;
@@ -803,7 +803,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 				xsub=stride-xtmp;
 
 			dat1=xtmp;
-			for (ytmp = 0; ytmp < ofs2; ytmp++) 
+			for (ytmp = 0; ytmp < ofs2; ytmp++)
 			{
 				memcpy(chroma+dat1,memory_tmp+offset+t2,xsub); // chroma
 				t2+=chr_luma_stride;
@@ -836,7 +836,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		{
 			while (fgets(buf,sizeof(buf),pipe))
 			{
-				sscanf(buf,"%x",&stride); 
+				sscanf(buf,"%x",&stride);
 			}
 			fclose(pipe);
 		}
@@ -845,7 +845,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		{
 			while (fgets(buf,sizeof(buf),pipe))
 			{
-				sscanf(buf,"%x",&res); 
+				sscanf(buf,"%x",&res);
 			}
 			fclose(pipe);
 		}
@@ -856,15 +856,15 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			printf("Mainmemory: <Memmapping failed>\n");
 			return;
 		}
-		
+
 		luma = (unsigned char *)malloc(1920*1152);
 		chroma = (unsigned char *)malloc(1920*576);
-		
+
 		int offset=1920*1152*5;	// offset for chroma buffer
-		
+
 		const unsigned char* frame_l = memory; // luma frame from video decoder
 		const unsigned char* frame_c = memory + offset; // chroma frame from video decoder
-		
+
 		int xtmp,ytmp,ysub,xsub;
 		const int ypart=32;
 		const int xpart=128;
@@ -873,7 +873,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		int ysubchromacount=res/64;
 
 		// "decode" luma/chroma, there are 128x32pixel blocks inside the decoder mem
-		for (ysub=0; ysub<=ysubcount; ysub++) 
+		for (ysub=0; ysub<=ysubcount; ysub++)
 		{
 			for (xsub=0; xsub<15; xsub++) // 1920/128=15
 			{
@@ -930,7 +930,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 
 		// Chrominance (half resolution)
 		ysubcount /= 2;
-		for (ysub=0; ysub<=ysubcount; ysub++) 
+		for (ysub=0; ysub<=ysubcount; ysub++)
 		{
 			for (xsub=0; xsub<15; xsub++) // 1920/128=15
 			{
@@ -990,16 +990,16 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 	} else if (stb_type == VULCAN || stb_type == PALLAS)
 	{
 		// grab via v4l device (ppc boxes)
-		
+
 		memory_tmp = (unsigned char *)malloc(720 * 576 * 3 + 16);
-		
+
 		int fd_video = open(VIDEO_DEV, O_RDONLY);
 		if (fd_video < 0)
 		{
 			printf("could not open /dev/video");
 			return;
-		}	 
-		
+		}
+
 		int r = read(fd_video, memory_tmp, 720 * 576 * 3 + 16);
 		if (r < 16)
 		{
@@ -1008,42 +1008,42 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			return;
 		}
 		close(fd_video);
-		
+
 		int *size = (int*)memory_tmp;
 		stride = size[0];
 		res = size[1];
-		
+
 		luma = (unsigned char *)malloc(stride * res);
 		chroma = (unsigned char *)malloc(stride * res);
-		
+
 		memcpy (luma, memory_tmp + 16, stride * res);
 		memcpy (chroma, memory_tmp + 16 + stride * res, stride * res);
-		
+
 		free(memory_tmp);
 	}
 
-	close(mem_fd);	
-	
+	close(mem_fd);
+
 	int Y, U, V, y ,x, out1, pos, RU, GU, GV, BV, rgbstride;
 	Y=U=V=0;
-		
+
 	// yuv2rgb conversion (4:2:0)
 	printf("... converting Video from YUV to RGB color space\n");
 	out1=pos=t=0;
 	rgbstride=stride*3;
-	
+
 	for (y=res; y != 0; y-=2)
 	{
 		for (x=stride; x != 0; x-=2)
 		{
 			U=chroma[t++];
 			V=chroma[t++];
-			
+
 			RU=yuv2rgbtable_ru[U]; // use lookup tables to speedup the whole thing
 			GU=yuv2rgbtable_gu[U];
 			GV=yuv2rgbtable_gv[V];
 			BV=yuv2rgbtable_bv[V];
-			
+
 			switch (stb_type) //on xilleon we use bgr instead of rgb so simply swap the coeffs
 			{
 				case XILLEON:
@@ -1051,13 +1051,13 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 					break;
 			}
 
-			// now we do 4 pixels on each iteration this is more code but much faster 
-			Y=yuv2rgbtable_y[luma[pos]]; 
+			// now we do 4 pixels on each iteration this is more code but much faster
+			Y=yuv2rgbtable_y[luma[pos]];
 
 			video[out1]=CLAMP((Y + RU)>>16);
 			video[out1+1]=CLAMP((Y - GV - GU)>>16);
 			video[out1+2]=CLAMP((Y + BV)>>16);
-			
+
 			Y=yuv2rgbtable_y[luma[stride+pos]];
 
 			video[out1+rgbstride]=CLAMP((Y + RU)>>16);
@@ -1066,19 +1066,19 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 
 			pos++;
 			out1+=3;
-			
+
 			Y=yuv2rgbtable_y[luma[pos]];
 
 			video[out1]=CLAMP((Y + RU)>>16);
 			video[out1+1]=CLAMP((Y - GV - GU)>>16);
 			video[out1+2]=CLAMP((Y + BV)>>16);
-			
+
 			Y=yuv2rgbtable_y[luma[stride+pos]];
 
 			video[out1+rgbstride]=CLAMP((Y + RU)>>16);
 			video[out1+1+rgbstride]=CLAMP((Y - GV - GU)>>16);
 			video[out1+2+rgbstride]=CLAMP((Y + BV)>>16);
-			
+
 			out1+=3;
 			pos++;
 		}
@@ -1102,7 +1102,7 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 	unsigned char *lfb;
 	struct fb_fix_screeninfo fix_screeninfo;
 	struct fb_var_screeninfo var_screeninfo;
-	
+
 	fb=open("/dev/fb/0", O_RDWR);
 	if (fb == -1)
 	{
@@ -1113,7 +1113,7 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 			return;
 		}
 	}
-	
+
 	if(ioctl(fb, FBIOGET_FSCREENINFO, &fix_screeninfo) == -1)
 	{
 		printf("Framebuffer: <FBIOGET_FSCREENINFO failed>\n");
@@ -1125,21 +1125,21 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 		printf("Framebuffer: <FBIOGET_VSCREENINFO failed>\n");
 		return;
 	}
-	
+
 	if(!(lfb = (unsigned char*)mmap(0, fix_screeninfo.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fb, 0)))
 	{
 		printf("Framebuffer: <Memmapping failed>\n");
 		return;
 	}
-	
-	if ( var_screeninfo.bits_per_pixel == 32 ) 
+
+	if ( var_screeninfo.bits_per_pixel == 32 )
 	{
 		printf("Grabbing 32bit Framebuffer ...\n");
-	
+
 		// get 32bit framebuffer
 		pos=pos1=pos2=0;
 		ofs=fix_screeninfo.line_length-(var_screeninfo.xres*4);
-		
+
 		if (ofs == 0) // we have no offset ? so do it the easy and fast way
 		{
 			memcpy(osd,lfb,fix_screeninfo.line_length*var_screeninfo.yres);
@@ -1158,35 +1158,35 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 	{
 		printf("Grabbing 16bit Framebuffer ...\n");
 		unsigned short color;
-		
+
 		// get 16bit framebuffer
 		pos=pos1=pos2=0;
-		ofs=fix_screeninfo.line_length-(var_screeninfo.xres*2);		
+		ofs=fix_screeninfo.line_length-(var_screeninfo.xres*2);
 		for (y=0; y < var_screeninfo.yres; y+=1)
 		{
 			for (x=0; x < var_screeninfo.xres; x+=1)
 			{
 				color = lfb[pos2] << 8 | lfb[pos2+1];
 				pos2+=2;
-				
+
 				osd[pos1++] = BLUE565(color); // b
 				osd[pos1++] = GREEN565(color); // g
 				osd[pos1++] = RED565(color); // r
 				osd[pos1++]=0x00; // tr - there is no transparency in 16bit mode
 			}
 			pos2+=ofs;
-		} 
+		}
 	} else if ( var_screeninfo.bits_per_pixel == 8 )
 	{
 		printf("Grabbing 8bit Framebuffer ...\n");
 		unsigned short color;
-	
+
 		// Read Color Palette directly from the main memory, because the FBIOGETCMAP is buggy on dream and didnt
 		// gives you the correct colortable !
 		int mem_fd;
 		unsigned char *memory;
 		unsigned short rd[256], gn[256], bl[256], tr[256];
-		
+
 		if ((mem_fd = open("/dev/mem", O_RDWR) ) < 0) {
 			printf("Mainmemory: can't open /dev/mem \n");
 			return;
@@ -1197,27 +1197,27 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 			printf("Mainmemory: <Memmapping failed>\n");
 			return;
 		}
-		
+
 		if (stb_type == VULCAN) // DM500/5620 stores the colors as a 16bit word with yuv values, so we have to convert :(
 		{
 			unsigned short yuv;
 			pos2 = 0;
 			for (pos1=16; pos1<(256*2)+16; pos1+=2)
 			{
-				
+
 				yuv = memory[pos1] << 8 | memory[pos1+1];
-			
+
 				rd[pos2]=CLAMP((76310*(YFB(yuv)-16) + 104635*(CRFB(yuv)-128))>>16);
 				gn[pos2]=CLAMP((76310*(YFB(yuv)-16) - 53294*(CRFB(yuv)-128) - 25690*(CBFB(yuv)-128))>>16);
 				bl[pos2]=CLAMP((76310*(YFB(yuv)-16) + 132278*(CBFB(yuv)-128))>>16);
-			
+
 				if (yuv == 0) // transparency is a bit tricky, there is a 2 bit blending value BFFB(yuv), but not really used
 				{
 					rd[pos2]=gn[pos2]=bl[pos2]=0;
 					tr[pos2]=0x00;
 				} else
 					tr[pos2]=0xFF;
-				
+
 				pos2++;
 			}
 		} else if (stb_type == PALLAS) // DM70x0 stores the colors in plain rgb values
@@ -1237,23 +1237,23 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 			return;
 		}
 		close(mem_fd);
-		
+
 		// get 8bit framebuffer
 		pos=pos1=pos2=0;
-		ofs=fix_screeninfo.line_length-(var_screeninfo.xres);		
+		ofs=fix_screeninfo.line_length-(var_screeninfo.xres);
 		for (y=0; y < var_screeninfo.yres; y+=1)
 		{
 			for (x=0; x < var_screeninfo.xres; x+=1)
 			{
 				color = lfb[pos2++];
-				
+
 				osd[pos1++] = bl[color]; // b
 				osd[pos1++] = gn[color]; // g
 				osd[pos1++] = rd[color]; // r
 				osd[pos1++] = tr[color]; // tr
 			}
 			pos2+=ofs;
-		} 
+		}
 	}
 	close(fb);
 
@@ -1273,7 +1273,7 @@ void smooth_resize(unsigned char *source, unsigned char *dest, int xsource, int 
 	ys=ysource; // y-resolution source
 	xd=xdest; // x-resolution destination
 	yd=ydest; // y-resolution destination
-	
+
 	// get x scale factor, use bitshifting to get rid of floats
 	fx=((xs-1)<<16)/xd;
 
@@ -1281,9 +1281,9 @@ void smooth_resize(unsigned char *source, unsigned char *dest, int xsource, int 
 	fy=((ys-1)<<16)/yd;
 
 	unsigned int sx1[xd],sx2[xd],sy1,sy2;
-	
+
 	// pre calculating sx1/sx2 for faster resizing
-	for (x=0; x<xd; x++) 
+	for (x=0; x<xd; x++)
 	{
 		// first x source pixel for calculating destination pixel
 		sx1[x]=(fx*x)>>16; //floor()
@@ -1291,11 +1291,11 @@ void smooth_resize(unsigned char *source, unsigned char *dest, int xsource, int 
 		// last x source pixel for calculating destination pixel
 		sx2[x]=sx1[x]+(fx>>16);
 		if (fx & 0x7FFF) //ceil()
-			sx2[x]++;		
+			sx2[x]++;
 	}
-	
+
 	// Scale
-	for (y=0; y<yd; y++) 
+	for (y=0; y<yd; y++)
 	{
 
 		// first y source pixel for calculating destination pixel
@@ -1306,18 +1306,18 @@ void smooth_resize(unsigned char *source, unsigned char *dest, int xsource, int 
 		if (fy & 0x7FFF) //ceil()
 			sy2++;
 
-		for (x=0; x<xd; x++) 
+		for (x=0; x<xd; x++)
 		{
 			// we do this for every color
-			for (c=0; c<colors; c++) 
+			for (c=0; c<colors; c++)
 			{
 				// calculationg destination pixel
 				tmp_i=0;
 				dpixel=0;
-		
-				for (t1=sy1; t1<sy2; t1++) 
+
+				for (t1=sy1; t1<sy2; t1++)
 				{
-					for (t=sx1[x]; t<=sx2[x]; t++) 
+					for (t=sx1[x]; t<=sx2[x]; t++)
 					{
 						tmp_i+=(int)source[(t*colors)+c+(t1*xs*colors)];
 						dpixel++;
