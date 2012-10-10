@@ -151,7 +151,7 @@ int main(int argc, char **argv) {
 		{
 			while (fgets(buf,sizeof(buf),pipe))
 			{
-				if (strcasestr(buf,"DM500HD") || strcasestr(buf,"DM800SE") || strcasestr(buf,"Gigablue"))
+				if (strcasestr(buf,"DM500HD") || strcasestr(buf,"DM800SE") || strcasestr(buf,"DM7020HD") || strcasestr(buf,"Gigablue"))
 				{
 					stb_type = BRCM7405;
 					break;
