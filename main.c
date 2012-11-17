@@ -82,8 +82,8 @@ void fast_resize(unsigned char *source, unsigned char *dest, int xsource, int ys
 void (*resize)(unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
 void combine(unsigned char *output, unsigned char *video, unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
-enum {UNKNOWN,PALLAS,VULCAN,XILLEON,BRCM7400,BRCM7401,BRCM7403,BRCM7405,BRCM7335,BRCM7358};
-char *stb_name[]={"unknown","Pallas","Vulcan","Xilleon","Brcm7400","Brcm7401","Brcm7403","Brcm7405","Brcm7335","Brcm7358"};
+enum {UNKNOWN,PALLAS,VULCAN,XILLEON,BRCM7400,BRCM7401,BRCM7403,BRCM7405,BRCM7335,BRCM7358,GIGABLUE};
+char *stb_name[]={"unknown","Pallas","Vulcan","Xilleon","Brcm7400","Brcm7401","Brcm7403","Brcm7405","Brcm7335","Brcm7358","Gigablue"};
 int stb_type=UNKNOWN;
 
 // main program
@@ -128,6 +128,38 @@ int main(int argc, char **argv) {
 	}
 	pclose(pipe);
 
+	if (stb_type == BRCM7401) // All Broadcom Dreamboxes use the same framebuffer string, so fall back to /proc/stb/info/boxtype for detecting Gigablue
+	{
+		pipe = fopen("/proc/stb/info/boxtype", "r");
+		if (pipe)
+		{
+			while (fgets(buf,sizeof(buf),pipe))
+			{
+				if (strcasestr(buf,"Gigablue"))
+				{
+					stb_type = GIGABLUE;
+					break;
+				}
+			}
+			fclose(pipe);
+		}
+	}
+	if (stb_type == BRCM7401) // All Broadcom STB's use the same framebuffer string, so fall back to /proc/stb/info/gbmodel for detecting Gigablue
+	{
+		pipe = fopen("/proc/stb/info/gbmodel", "r");
+		if (pipe)
+		{
+			while (fgets(buf,sizeof(buf),pipe))
+			{
+				if (strcasestr(buf,"quad"))
+				{
+					stb_type = GIGABLUE;
+					break;
+				}
+			}
+			fclose(pipe);
+		}
+	}
 	if (stb_type == BRCM7401) // All Broadcom STB's use the same framebuffer string, so fall back to /proc/stb/info/vumodel for detecting the Vu+Duo
 	{
 		pipe = fopen("/proc/stb/info/vumodel", "r");
@@ -151,7 +183,7 @@ int main(int argc, char **argv) {
 		{
 			while (fgets(buf,sizeof(buf),pipe))
 			{
-				if (strcasestr(buf,"DM500HD") || strcasestr(buf,"DM800SE") || strcasestr(buf,"DM7020HD") || strcasestr(buf,"Gigablue"))
+				if (strcasestr(buf,"DM500HD") || strcasestr(buf,"DM800SE") || strcasestr(buf,"DM7020HD"))
 				{
 					stb_type = BRCM7405;
 					break;
@@ -1021,6 +1053,39 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		memcpy (chroma, memory_tmp + 16 + stride * res, stride * res);
 		
 		free(memory_tmp);
+	} else if (stb_type == GIGABLUE)
+	{
+		memory_tmp = (unsigned char *)malloc(1920*1080*3);
+		
+		int fd_video = open("/dev/dvb/adapter0/video0", O_RDONLY);
+		if (fd_video < 0)
+		{
+			printf("could not open /dev/dvb/adapter0/video0\n");
+			return;
+		}	 
+		
+		int r = read(fd_video, memory_tmp, 1920*1080*3);
+		if (r < (1920*1080*3))
+		{
+			fprintf(stderr, "read failed\n");
+			close(fd_video);
+			return;
+		}
+		close(fd_video);
+
+		memcpy(video, memory_tmp, 1920*1080*3);
+
+		free(memory_tmp);
+
+		close(mem_fd);	
+
+		*xres=1920;
+		*yres=1080;
+		printf("... Video-Size: %d x %d\n",*xres,*yres);
+		free(luma);
+		free(chroma);
+		
+		return ;
 	}
 
 	close(mem_fd);	
