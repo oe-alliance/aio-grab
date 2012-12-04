@@ -733,12 +733,12 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		{
 			//vert_start=data[0x1B]<<8|data[0x1A];
 			//vert_end=data[0x19]<<8|data[0x18];
-			stride=data[0x15]<<8|data[0x14];	
+			stride=data[0x15]<<8|data[0x14];
 			ofs=(data[0x28]<<8|data[0x27])>>4; // luma lines
 			ofs2=(data[0x2c]<<8|data[0x2b])>>4;// chroma lines
 			adr=(data[0x1f]<<24|data[0x1e]<<16|data[0x1d]<<8|data[0x1c])&0xFFFFFF00; // start of  videomem
 			adr2=(data[0x23]<<24|data[0x22]<<16|data[0x21]<<8|data[0x20])&0xFFFFFF00;
-		}
+		} 
 		else if(stb_type == BRCM7358)
 		{
 			stride=data[0x15]<< 8|data[0x14];
