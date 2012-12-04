@@ -708,23 +708,12 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 	if (stb_type == BRCM7401 || stb_type == BRCM7403 || stb_type == BRCM7400 || stb_type == BRCM7405 || stb_type == BRCM7335 || stb_type == BRCM7325 || stb_type == BRCM7358 || stb_type == BRCM7346 || stb_type == BRCM7425)
 	{
 		// grab brcm7401 pic from decoder memory
-		if(stb_type == BRCM7401 || stb_type == BRCM7403 || stb_type == BRCM7400 || stb_type == BRCM7405 || stb_type == BRCM7335 || stb_type == BRCM7358)
+		const unsigned char* data = (unsigned char*)mmap(0, 100, PROT_READ, MAP_SHARED, mem_fd, (stb_type == BRCM7358 || stb_type == BRCM7346 || stb_type == BRCM7425) ? 0x10600000 : 0x10100000);
+		if(!data)
 		{
-			const unsigned char* data = (unsigned char*)mmap(0, 100, PROT_READ, MAP_SHARED, mem_fd, (stb_type == BRCM7358) ? 0x10600000 : 0x10100000);
-			if(!data)
-			{
-				printf("Mainmemory: <Memmapping failed>\n");
-				return;
-			}
+			printf("Mainmemory: <Memmapping failed>\n");
+			return;
 		}
-		else
-		{
-			if(!(memory = (unsigned char*)mmap(0, 100, PROT_READ, MAP_SHARED, mem_fd, 0x10600000)))
-			{
-				printf("Mainmemory: <Memmapping failed>\n");
-				return;
-			}
- 		}		
 		
 		int adr,adr2,ofs,ofs2,offset/*,vert_start,vert_end*/;
 		int xtmp,xsub,ytmp,t2,dat1;
