@@ -83,7 +83,7 @@ void (*resize)(unsigned char *source, unsigned char *dest, int xsource, int ysou
 void combine(unsigned char *output, unsigned char *video, unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
 enum {UNKNOWN,PALLAS,VULCAN,XILLEON,BRCM7400,BRCM7401,BRCM7403,BRCM7405,BRCM7335,BRCM7358,GIGABLUE,AZBOX863x,AZBOX865x,BRCM7325,BRCM7346,BRCM7356,BRCM7424,BRCM7425};
-char *stb_name[]={"unknown","Pallas","Vulcan","Xilleon","Brcm7400","Brcm7401","Brcm7403","Brcm7405","Brcm7335","Brcm7358","Gigablue","Azbox863x","Azbox865x,"Brcm7325","Brcm7346","Brcm7356","Brcm7424","Brcm7425"};
+char *stb_name[]={"unknown","Pallas","Vulcan","Xilleon","Brcm7400","Brcm7401","Brcm7403","Brcm7405","Brcm7335","Brcm7358","Gigablue","Azbox863x","Azbox865x","Brcm7325","Brcm7346","Brcm7356","Brcm7424","Brcm7425"};
 int stb_type=UNKNOWN;
 
 // main program
