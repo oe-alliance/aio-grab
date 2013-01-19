@@ -24,10 +24,6 @@ the great support.
 Feel free to use the code for your own projects. See LICENSE file for details.
 */
 
-#ifndef _OPENMP
-#	error No openmp
-#endif
-
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdio.h>
