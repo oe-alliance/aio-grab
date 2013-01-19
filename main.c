@@ -24,6 +24,10 @@ the great support.
 Feel free to use the code for your own projects. See LICENSE file for details.
 */
 
+#ifndef _OPENMP
+#	error No openmp
+#endif
+
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -77,10 +81,10 @@ static const int yuv2rgbtable_bv[256] = {
 
 void getvideo(unsigned char *video, int *xres, int *yres);
 void getosd(unsigned char *osd, int *xres, int *yres);
-void smooth_resize(unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
-void fast_resize(unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
-void (*resize)(unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
-void combine(unsigned char *output, unsigned char *video, unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
+void smooth_resize(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
+void fast_resize(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
+void (*resize)(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
+void combine(unsigned char *output, const unsigned char *video, const unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
 enum {UNKNOWN,PALLAS,VULCAN,XILLEON,BRCM7400,BRCM7401,BRCM7405,BRCM7335,BRCM7358};
 char *stb_name[]={"unknown","Pallas","Vulcan","Xilleon","Brcm7400","Brcm7401","Brcm7405","Brcm7335","Brcm7358"};
@@ -813,20 +817,22 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		munmap(memory_tmp, memory_tmp_size);
 
 		int count = (stride*ofs) >> 2;
-		unsigned char* p = luma;
-		for (t=count; t != 0; --t)
+		#pragma omp parallel for
+		for (t = 0; t < count; ++t)
 		{
+			unsigned char* p = luma + (4 * t);
+			unsigned char t;
 			SWAP(p[0], p[3]);
 			SWAP(p[1], p[2]);
-			p += 4;
 		}
 		count = (stride*(ofs>>1)) >> 2;
-		p = chroma;
-		for (t=count; t != 0; --t)
+		#pragma omp parallel for 
+		for (t = 0; t < count; ++t)
 		{
+			unsigned char* p = chroma + (4 * t);
+			unsigned char t;
 			SWAP(p[0], p[3]);
 			SWAP(p[1], p[2]);
-			p += 4;
 		}
 	} else if (stb_type == XILLEON)
 	{
@@ -1024,25 +1030,28 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 
 	close(mem_fd);
 
-	int Y, U, V, y ,x, out1, pos, RU, GU, GV, BV, rgbstride;
-	Y=U=V=0;
-
 	// yuv2rgb conversion (4:2:0)
 	printf("... converting Video from YUV to RGB color space\n");
-	out1=pos=t=0;
-	rgbstride=stride*3;
-
-	for (y=res; y != 0; y-=2)
+	const int rgbstride = stride * 3;
+	const int scans = res / 2;
+	int y;
+	#pragma omp parallel for
+	for (y=0; y < scans; ++y)
 	{
+		int x;
+		int out1 = y * rgbstride * 2;
+		int pos = y * stride * 2;
+		const unsigned char* chroma_p = chroma + (y * stride);
+
 		for (x=stride; x != 0; x-=2)
 		{
-			U=chroma[t++];
-			V=chroma[t++];
+			int U = *chroma_p++;
+			int V = *chroma_p++;
 
-			RU=yuv2rgbtable_ru[U]; // use lookup tables to speedup the whole thing
-			GU=yuv2rgbtable_gu[U];
-			GV=yuv2rgbtable_gv[V];
-			BV=yuv2rgbtable_bv[V];
+			int RU=yuv2rgbtable_ru[U]; // use lookup tables to speedup the whole thing
+			int GU=yuv2rgbtable_gu[U];
+			int GV=yuv2rgbtable_gv[V];
+			int BV=yuv2rgbtable_bv[V];
 
 			switch (stb_type) //on xilleon we use bgr instead of rgb so simply swap the coeffs
 			{
@@ -1052,7 +1061,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			}
 
 			// now we do 4 pixels on each iteration this is more code but much faster
-			Y=yuv2rgbtable_y[luma[pos]];
+			int Y=yuv2rgbtable_y[luma[pos]];
 
 			video[out1]=CLAMP((Y + RU)>>16);
 			video[out1+1]=CLAMP((Y - GV - GU)>>16);
@@ -1082,9 +1091,6 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			out1+=3;
 			pos++;
 		}
-		out1+=rgbstride;
-		pos+=stride;
-
 	}
 
 	*xres=stride;
@@ -1264,48 +1270,52 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 
 // bicubic pixmap resizing
 
-void smooth_resize(unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors)
+void smooth_resize(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors)
 {
-	unsigned int xs,ys,xd,yd,dpixel,fx,fy;
-	unsigned int c,tmp_i;
-	int x,y,t,t1;
-	xs=xsource; // x-resolution source
-	ys=ysource; // y-resolution source
-	xd=xdest; // x-resolution destination
-	yd=ydest; // y-resolution destination
+	const unsigned int xs = xsource; // x-resolution source
+	const unsigned int ys = ysource; // y-resolution source
+	const unsigned int xd = xdest; // x-resolution destination
+	const unsigned int yd = ydest; // y-resolution destination
 
+	unsigned int sx1[xd];
+	unsigned int sx2[xd];
 	// get x scale factor, use bitshifting to get rid of floats
-	fx=((xs-1)<<16)/xd;
-
+	const int fx=((xs-1)<<16)/xd;
 	// get y scale factor, use bitshifting to get rid of floats
-	fy=((ys-1)<<16)/yd;
+	const int fy=((ys-1)<<16)/yd;
 
-	unsigned int sx1[xd],sx2[xd],sy1,sy2;
-
-	// pre calculating sx1/sx2 for faster resizing
-	for (x=0; x<xd; x++)
 	{
-		// first x source pixel for calculating destination pixel
-		sx1[x]=(fx*x)>>16; //floor()
+		// pre calculating sx1/sx2 for faster resizing
+		int x;
+		for (x=0; x<xd; x++)
+		{
+			// first x source pixel for calculating destination pixel
+			sx1[x]=(fx*x)>>16; //floor()
 
-		// last x source pixel for calculating destination pixel
-		sx2[x]=sx1[x]+(fx>>16);
-		if (fx & 0x7FFF) //ceil()
-			sx2[x]++;
+			// last x source pixel for calculating destination pixel
+			sx2[x]=sx1[x]+(fx>>16);
+			if (fx & 0x7FFF) //ceil()
+				sx2[x]++;
+		}
 	}
 
 	// Scale
+	int y;
+	#pragma omp parallel for shared(sx1, sx2, source, dest)
 	for (y=0; y<yd; y++)
 	{
+		unsigned int dpixel;
+		unsigned int c,tmp_i;
+		int t, t1;
 
 		// first y source pixel for calculating destination pixel
-		sy1=(fy*y)>>16; //floor()
-
+		const unsigned int sy1=(fy*y)>>16; //floor()
 		// last y source pixel for calculating destination pixel
-		sy2=sy1+(fy>>16);
+		unsigned int sy2=sy1+(fy>>16);
 		if (fy & 0x7FFF) //ceil()
 			sy2++;
 
+		int x;
 		for (x=0; x<xd; x++)
 		{
 			// we do this for every color
@@ -1331,7 +1341,7 @@ void smooth_resize(unsigned char *source, unsigned char *dest, int xsource, int 
 }
 
 // "nearest neighbor" pixmap resizing
-void fast_resize(unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors)
+void fast_resize(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors)
 {
 	const int x_ratio = (int)((xsource<<16)/xdest) ;
 	const int y_ratio = (int)((ysource<<16)/ydest) ;
@@ -1355,27 +1365,30 @@ void fast_resize(unsigned char *source, unsigned char *dest, int xsource, int ys
 }
 
 // combining pixmaps by using an alphamap
-void combine(unsigned char *output, unsigned char *video, unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres)
+void combine(unsigned char *output, const unsigned char *video, const unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres)
 {
-	int pos1 = 0;
-	int vpos1 = 0;
 	const int vbottom = vtop + vheight;
 	const int vright = vleft + vwidth;
 	int y;
 	for (y = 0; y < vtop; y++)
 	{
+		int pos1 = y * xres * 4;
+		int vpos1 = y * xres * 3;
 		int x;
 		for (x = 0; x < xres; x++)
 		{
-			int apos=pos1+3;
+			const int apos=pos1+3;
 			output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
 			output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
 			output[vpos1++] =  (( osd[pos1++] * osd[apos] ) ) >>8;
 			pos1++; // skip alpha byte
 		}
 	}
+	#pragma omp parallel for
 	for (y = vtop; y < vbottom; y++)
 	{
+		int pos1 = y * xres * 4;
+		int vpos1 = y * xres * 3;
 		int x;
 		for (x = 0; x < vleft; x++)
 		{
@@ -1406,6 +1419,8 @@ void combine(unsigned char *output, unsigned char *video, unsigned char *osd, in
 	}
 	for (y = vbottom; y < yres; y++)
 	{
+		int pos1 = y * xres * 4;
+		int vpos1 = y * xres * 3;
 		int x;
 		for (x = 0; x < xres; x++)
 		{
