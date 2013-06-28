@@ -112,28 +112,28 @@ int main(int argc, char **argv)
 
 	// detect STB
 	char buf[256];
-	FILE *pipe = fopen("/proc/fb","r");
-	if (!pipe)
+	FILE *fp = fopen("/proc/fb","r");
+	if (!fp)
 	{
 		printf("No framebuffer, unknown STB .. quit.\n");
 		return 1;
 	}
 
-	while (fgets(buf,sizeof(buf),pipe))
+	while (fgets(buf,sizeof(buf),fp))
 	{
 		if (strcasestr(buf,"VULCAN")) stb_type=VULCAN;
 		if (strcasestr(buf,"PALLAS")) stb_type=PALLAS;
 		if (strcasestr(buf,"XILLEON")) stb_type=XILLEON;
 		if (strcasestr(buf,"BCM7401") || strcasestr(buf,"BCMFB")) stb_type=BRCM7401;
 	}
-	pclose(pipe);
+	fclose(fp);
 
 	if (stb_type == BRCM7401) // All Broadcom STB's use the same framebuffer string, so fall back to /proc/stb/info/vumodel for detecting the Vu+Duo
 	{
-		pipe = fopen("/proc/stb/info/vumodel", "r");
-		if (pipe)
+		fp = fopen("/proc/stb/info/vumodel", "r");
+		if (fp)
 		{
-			while (fgets(buf,sizeof(buf),pipe))
+			while (fgets(buf,sizeof(buf),fp))
 			{
 				if (strcasestr(buf,"duo"))
 				{
@@ -141,15 +141,15 @@ int main(int argc, char **argv)
 					break;
 				}
 			}
-			fclose(pipe);
+			fclose(fp);
 		}
 	}
 	if (stb_type == BRCM7401) // All Broadcom Dreamboxes use the same framebuffer string, so fall back to /proc/stb/info/model for detecting DM8000/DM500HD
 	{
-		pipe = fopen("/proc/stb/info/model", "r");
-		if (pipe)
+		fp = fopen("/proc/stb/info/model", "r");
+		if (fp)
 		{
-			while (fgets(buf,sizeof(buf),pipe))
+			while (fgets(buf,sizeof(buf),fp))
 			{
 				if (strcasestr(buf,"DM500HD") || strcasestr(buf,"DM800SE") || strcasestr(buf,"DM7020HD"))
 				{
@@ -157,14 +157,14 @@ int main(int argc, char **argv)
 					break;
 				}
 			}
-			fclose(pipe);
+			fclose(fp);
 		}
 		if (stb_type == BRCM7401)
 		{
-			pipe = fopen("/proc/cpuinfo","r");
-			if (pipe)
+			fp = fopen("/proc/cpuinfo","r");
+			if (fp)
 			{
-				while (fgets(buf, sizeof(buf), pipe))
+				while (fgets(buf, sizeof(buf), fp))
 				{
 					if (strcasestr(buf,"Brcm4380 V4.2"))
 					{
@@ -177,16 +177,16 @@ int main(int argc, char **argv)
 						break;
 					}
 				}
-				fclose(pipe);
+				fclose(fp);
 			}
 		}
 	}
 
-	pipe = fopen("/proc/stb/info/chipset", "r");
+	fp = fopen("/proc/stb/info/chipset", "r");
 
-	if (pipe)
+	if (fp)
 	{
-		while (fgets(buf,sizeof(buf),pipe))
+		while (fgets(buf,sizeof(buf),fp))
 		{
 			if (strcasestr(buf,"7400"))
 			{
@@ -229,7 +229,7 @@ int main(int argc, char **argv)
 				break;
 			}
 		}
-		fclose(pipe);
+		fclose(fp);
 	}
 	if (stb_type == UNKNOWN)
 	{
@@ -334,50 +334,50 @@ int main(int argc, char **argv)
 	// get aspect ratio
 	if (stb_type == VULCAN || stb_type == PALLAS)
 	{
-		pipe = fopen("/proc/bus/bitstream","r");
-		if (pipe)
+		fp = fopen("/proc/bus/bitstream","r");
+		if (fp)
 		{
-			while (fgets(buf,sizeof(buf),pipe))
+			while (fgets(buf,sizeof(buf),fp))
 				sscanf(buf,"A_RATIO: %d",&aspect);
-			fclose(pipe);
+			fclose(fp);
 		}
 	}
 	else
 	{
-		pipe = fopen("/proc/stb/vmpeg/0/aspect", "r");
-		if (pipe)
+		fp = fopen("/proc/stb/vmpeg/0/aspect", "r");
+		if (fp)
 		{
-			while (fgets(buf,sizeof(buf), pipe))
+			while (fgets(buf,sizeof(buf), fp))
 				sscanf(buf,"%x",&aspect);
-			fclose(pipe);
+			fclose(fp);
 		}
-		pipe = fopen("/proc/stb/vmpeg/0/dst_width", "r");
-		if (pipe)
+		fp = fopen("/proc/stb/vmpeg/0/dst_width", "r");
+		if (fp)
 		{
-			while (fgets(buf,sizeof(buf), pipe))
+			while (fgets(buf,sizeof(buf), fp))
 				sscanf(buf,"%x",&dst_width);
-			fclose(pipe);
+			fclose(fp);
 		}
-		pipe = fopen("/proc/stb/vmpeg/0/dst_height", "r");
-		if (pipe)
+		fp = fopen("/proc/stb/vmpeg/0/dst_height", "r");
+		if (fp)
 		{
-			while (fgets(buf,sizeof(buf), pipe))
+			while (fgets(buf,sizeof(buf), fp))
 				sscanf(buf,"%x",&dst_height);
-			fclose(pipe);
+			fclose(fp);
 		}
-		pipe = fopen("/proc/stb/vmpeg/0/dst_top", "r");
-		if (pipe)
+		fp = fopen("/proc/stb/vmpeg/0/dst_top", "r");
+		if (fp)
 		{
-			while (fgets(buf,sizeof(buf), pipe))
+			while (fgets(buf,sizeof(buf), fp))
 				sscanf(buf,"%x",&dst_top);
-			fclose(pipe);
+			fclose(fp);
 		}
-		pipe = fopen("/proc/stb/vmpeg/0/dst_left", "r");
-		if (pipe)
+		fp = fopen("/proc/stb/vmpeg/0/dst_left", "r");
+		if (fp)
 		{
-			while (fgets(buf,sizeof(buf), pipe))
+			while (fgets(buf,sizeof(buf), fp))
 				sscanf(buf,"%x",&dst_left);
-			fclose(pipe);
+			fclose(fp);
 		}
 		if (dst_width == 720) dst_width = 0;
 		if (dst_height == 576) dst_height = 0;
@@ -650,7 +650,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 	int t,stride,res;
 	res = stride = 0;
 	char buf[256];
-	FILE *pipe;
+	FILE *fp;
 
 	if (stb_type == BRCM7401 || stb_type == BRCM7400 || stb_type == BRCM7405 || stb_type == BRCM7335 || stb_type == BRCM7358)
 	{
@@ -687,10 +687,10 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 
 		munmap((void*)data, 100);
 
-		pipe=fopen("/proc/stb/vmpeg/0/yres","r");
-		while (fgets(buf,sizeof(buf),pipe))
+		fp=fopen("/proc/stb/vmpeg/0/yres","r");
+		while (fgets(buf,sizeof(buf),fp))
 			sscanf(buf,"%x",&res);
-		fclose(pipe);
+		fclose(fp);
 
 		if (!adr || !adr2)
 		{
@@ -841,23 +841,23 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 	else if (stb_type == XILLEON)
 	{
 		// grab xilleon pic from decoder memory
-		pipe = fopen("/proc/stb/vmpeg/0/xres","r");
-		if (pipe)
+		fp = fopen("/proc/stb/vmpeg/0/xres","r");
+		if (fp)
 		{
-			while (fgets(buf,sizeof(buf),pipe))
+			while (fgets(buf,sizeof(buf),fp))
 			{
 				sscanf(buf,"%x",&stride);
 			}
-			fclose(pipe);
+			fclose(fp);
 		}
-		pipe = fopen("/proc/stb/vmpeg/0/yres","r");
-		if (pipe)
+		fp = fopen("/proc/stb/vmpeg/0/yres","r");
+		if (fp)
 		{
-			while (fgets(buf,sizeof(buf),pipe))
+			while (fgets(buf,sizeof(buf),fp))
 			{
 				sscanf(buf,"%x",&res);
 			}
-			fclose(pipe);
+			fclose(fp);
 		}
 
 		printf("ML - 1\n");
