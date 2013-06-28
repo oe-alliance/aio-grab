@@ -82,9 +82,12 @@ void fast_resize(const unsigned char *source, unsigned char *dest, int xsource, 
 void (*resize)(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
 void combine(unsigned char *output, const unsigned char *video, const unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
-enum {UNKNOWN,PALLAS,VULCAN,XILLEON,BRCM7400,BRCM7401,BRCM7405,BRCM7335,BRCM7358,BRCM7346};
-char *stb_name[]={"unknown","Pallas","Vulcan","Xilleon","Brcm7400","Brcm7401","Brcm7405","Brcm7335","Brcm7358","Brcm7346"};
-int stb_type=UNKNOWN;
+static enum {UNKNOWN, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7358, BRCM7356} stb_type = UNKNOWN;
+
+static int chr_luma_stride = 0x40;
+static int chr_luma_register_offset = 0;
+static unsigned int registeroffset = 0;
+static unsigned int mem2memdma_register = 0;
 
 // main program
 
@@ -124,126 +127,142 @@ int main(int argc, char **argv)
 		if (strcasestr(buf,"VULCAN")) stb_type=VULCAN;
 		if (strcasestr(buf,"PALLAS")) stb_type=PALLAS;
 		if (strcasestr(buf,"XILLEON")) stb_type=XILLEON;
-		if (strcasestr(buf,"BCM7401") || strcasestr(buf,"BCMFB")) stb_type=BRCM7401;
 	}
 	fclose(fp);
 
-	if (stb_type == BRCM7401) // All Broadcom STB's use the same framebuffer string, so fall back to /proc/stb/info/vumodel for detecting the Vu+Duo
+	if (stb_type == UNKNOWN)
 	{
-		fp = fopen("/proc/stb/info/vumodel", "r");
-		if (fp)
+		FILE *file = fopen("/proc/stb/info/chipset", "r");
+		if (file)
 		{
-			while (fgets(buf,sizeof(buf),fp))
+			char buf[32];
+			while (fgets(buf, sizeof(buf), file))
 			{
-				if (strcasestr(buf,"duo"))
+				if (strstr(buf,"7400"))
+				{
+					stb_type = BRCM7400;
+					break;
+				}
+				else if (strstr(buf,"7401"))
+				{
+					stb_type = BRCM7401;
+					break;
+				}
+				else if (strstr(buf,"7405"))
+				{
+					stb_type = BRCM7405;
+					break;
+				}
+				else if (strstr(buf,"7413"))
+				{
+					stb_type = BRCM7405;
+					break;
+				}
+				else if (strstr(buf,"7335"))
 				{
 					stb_type = BRCM7335;
 					break;
 				}
+				else if (strstr(buf,"7325"))
+				{
+					stb_type = BRCM7325;
+					break;
+				}
+				else if (strstr(buf,"7358"))
+				{
+					stb_type = BRCM7358;
+					break;
+				}
+				else if (strstr(buf,"7356"))
+				{
+					stb_type = BRCM7356;
+					break;
+				}
 			}
-			fclose(fp);
+			fclose(file);
 		}
 	}
-	if (stb_type == BRCM7401) // All Broadcom Dreamboxes use the same framebuffer string, so fall back to /proc/stb/info/model for detecting DM8000/DM500HD
+
+	if (stb_type == UNKNOWN)
 	{
-		fp = fopen("/proc/stb/info/model", "r");
-		if (fp)
+		FILE *file = fopen("/proc/stb/info/model", "r");
+		if (file)
 		{
-			while (fgets(buf,sizeof(buf),fp))
+			char buf[32];
+			while (fgets(buf, sizeof(buf), file))
 			{
 				if (strcasestr(buf,"DM500HD") || strcasestr(buf,"DM800SE") || strcasestr(buf,"DM7020HD"))
 				{
 					stb_type = BRCM7405;
 					break;
 				}
-			}
-			fclose(fp);
-		}
-		if (stb_type == BRCM7401)
-		{
-			fp = fopen("/proc/cpuinfo","r");
-			if (fp)
-			{
-				while (fgets(buf, sizeof(buf), fp))
+				else if (strcasestr(buf,"DM8000"))
 				{
-					if (strcasestr(buf,"Brcm4380 V4.2"))
-					{
-						stb_type = BRCM7400;
-						break;
-					}
-					else if (strcasestr(buf,"Brcm4380 V4.4"))
-					{
-						stb_type = BRCM7335;
-						break;
-					}
+					stb_type = BRCM7400;
+					break;
 				}
-				fclose(fp);
+				else if (strcasestr(buf,"DM800"))
+				{
+					stb_type = BRCM7401;
+					break;
+				}
 			}
+			fclose(file);
 		}
 	}
 
-	fp = fopen("/proc/stb/info/chipset", "r");
-
-	if (fp)
-	{
-		while (fgets(buf,sizeof(buf),fp))
-		{
-			if (strcasestr(buf,"7400"))
-			{
-				stb_type = BRCM7400;
-				break;
-			}
-			else if (strcasestr(buf,"7401"))
-			{
-				stb_type = BRCM7401;
-				break;
-			}
-			else if (strcasestr(buf,"7405"))
-			{
-				stb_type = BRCM7405;
-				break;
-			}
-			else if (strcasestr(buf,"7335"))
-			{
-				stb_type = BRCM7335;
-				break;
-			}
-			else if (strcasestr(buf,"7358"))
-			{
-				stb_type = BRCM7358;
-				break;
-			}
-			else if (strcasestr(buf,"7356"))
-			{
-				stb_type = BRCM7346;
-				break;
-			}
-			else if (strcasestr(buf,"XILLEON"))
-			{
-				stb_type = XILLEON;
-				break;
-			}
-			else if (strcasestr(buf,"PALLAS"))
-			{
-				stb_type = PALLAS;
-				break;
-			}
-			else if (strcasestr(buf,"VULCAN"))
-			{
-				stb_type = VULCAN;
-				break;
-			}
-		}
-		fclose(fp);
-	}
 	if (stb_type == UNKNOWN)
 	{
-		printf("Unknown STB .. quit.\n");
-		return 1;
+		printf("unknown stb type\n");
+		return -1;
 	}
-	else
+
+	switch (stb_type)
 	{
-		printf("Detected STB: %s\n", stb_name[stb_type]);
+		case BRCM7400:
+			registeroffset = 0x10100000;
+			chr_luma_stride = 0x40;
+			chr_luma_register_offset = 0x20;
+			mem2memdma_register = 0x10c02000;
+			break;
+		case BRCM7401:
+			registeroffset = 0x10100000;
+			chr_luma_stride = 0x40;
+			chr_luma_register_offset = 0x20;
+			mem2memdma_register = 0;
+			break;
+		case BRCM7405:
+			registeroffset = 0x10100000;
+			chr_luma_stride = 0x80;
+			chr_luma_register_offset = 0x20;
+			mem2memdma_register = 0;
+			break;
+		case BRCM7325:
+			registeroffset = 0x10100000;
+			chr_luma_stride = 0x80;
+			chr_luma_register_offset = 0x20;
+			mem2memdma_register = 0;
+			break;
+		case BRCM7335:
+			registeroffset = 0x10100000;
+			chr_luma_stride = 0x40;
+			chr_luma_register_offset = 0x20;
+			mem2memdma_register = 0x10c02000;
+			break;
+		case BRCM7358:
+			registeroffset = 0x10600000;
+			chr_luma_stride = 0x40;
+			chr_luma_register_offset = 0x34;
+			mem2memdma_register = 0;
+			break;
+		case BRCM7356:
+			registeroffset = 0x10600000;
+			chr_luma_stride = 0x80;
+			chr_luma_register_offset = 0x34;
+			mem2memdma_register = 0;
+			break;
+		default:
+			break;
 	}
 
 	// process command line
@@ -657,10 +676,10 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 	char buf[256];
 	FILE *fp;
 
-	if (stb_type == BRCM7401 || stb_type == BRCM7400 || stb_type == BRCM7405 || stb_type == BRCM7335 || stb_type == BRCM7358 || stb_type == BRCM7346)
+	if (stb_type > XILLEON)
 	{
-		// grab brcm7401 pic from decoder memory
-		const unsigned char* data = (unsigned char*)mmap(0, 100, PROT_READ, MAP_SHARED, mem_fd, ((stb_type == BRCM7358) || (stb_type == BRCM7346)) ? 0x10600000 : 0x10100000);
+		// grab bcm pic from decoder memory
+		const unsigned char* data = (unsigned char*)mmap(0, 100, PROT_READ, MAP_SHARED, mem_fd, registeroffset);
 		if(!data)
 		{
 			printf("Mainmemory: <Memmapping failed>\n");
@@ -670,33 +689,12 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		int adr,adr2,ofs,ofs2,offset/*,vert_start,vert_end*/;
 		int xtmp,xsub,ytmp,t2,dat1;
 
-		if (stb_type == BRCM7358)
-		{
-			stride=data[0x15]<< 8|data[0x14];
-			ofs=data[0x3c]<<4; // luma lines
-			ofs2=data[0x40]<<4;// chroma lines
-			adr=(data[0x1f]<<24|data[0x1e]<<16|data[0x1d]<<8|data[0x1c])&0xFFFFFF00; // start of  videomem
-			adr2=(data[0x37]<<24|data[0x36]<<16|data[0x35]<<8|data[0x34])&0xFFFFFF00;
-		}
-		else if(stb_type == BRCM7346)
-		{
-			stride=data[0x15]<<8|data[0x14];
-			ofs=(data[0x3c]<<8|data[0x3b])>>4;
-			ofs2=(data[0x40]<<8|data[0x3f])>>4;
-			adr=(data[0x1f]<<24|data[0x1e]<<16|data[0x1d]<<8|data[0x1c])&0xFFFFFF00;
-			adr2=(data[0x37]<<24|data[0x36]<<16|data[0x35]<<8|data[0x34])&0xFFFFFF00;
-		}
-		else
-		{
-			//vert_start=data[0x1B]<<8|data[0x1A];
-			//vert_end=data[0x19]<<8|data[0x18];
-			stride=data[0x15]<<8|data[0x14];
-			ofs=(data[0x28]<<8|data[0x27])>>4; // luma lines
-			ofs2=(data[0x2c]<<8|data[0x2b])>>4;// chroma lines
-			adr=(data[0x1f]<<24|data[0x1e]<<16|data[0x1d]<<8|data[0x1c])&0xFFFFFF00; // start of  videomem
-			adr2=(data[0x23]<<24|data[0x22]<<16|data[0x21]<<8|data[0x20])&0xFFFFFF00;
-		}
-		offset=adr2-adr;
+		ofs = data[chr_luma_register_offset + 8] << 4; /* luma lines */
+		ofs2 = data[chr_luma_register_offset + 12] << 4; /* chroma lines */
+		adr2 = data[chr_luma_register_offset + 3] << 24 | data[chr_luma_register_offset + 2] << 16 | data[chr_luma_register_offset + 1] << 8;
+		stride = data[0x15] << 8 | data[0x14];
+		adr = data[0x1f] << 24 | data[0x1e] << 16 | data[0x1d] << 8; /* start of videomem */
+		offset = adr2 - adr;
 
 		munmap((void*)data, 100);
 
@@ -721,9 +719,9 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 
 		int memory_tmp_size = 0;
 		// grabbing luma & chroma plane from the decoder memory
-		if (stb_type == BRCM7401 || stb_type == BRCM7405 || stb_type == BRCM7358 || stb_type == BRCM7346)
+		if (!mem2memdma_register)
 		{
-			// on dm800/dm500hd we have direct access to the decoder memory
+			// we have direct access to the decoder memory
 			memory_tmp_size = offset + stride*(ofs2+64);
 			if(!(memory_tmp = (unsigned char*)mmap(0, memory_tmp_size, PROT_READ, MAP_SHARED, mem_fd, adr)))
 			{
@@ -736,7 +734,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 							// result with a 50ms delay
 
 		}
-		else if (stb_type == BRCM7400 || stb_type == BRCM7335)
+		else
 		{
 			int tmp_size = offset + stride*(ofs2+64);
 			if (tmp_size > 2 * DMA_BLOCKSIZE)
@@ -751,7 +749,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 				return;
 			}
 			volatile unsigned long *mem_dma;
-			if(!(mem_dma = (volatile unsigned long*)mmap(0, 0x1000, PROT_READ|PROT_WRITE, MAP_SHARED, mem_fd, (stb_type == BRCM7400) ? 0x10c02000 : 0x10c01000)))
+			if (!(mem_dma = (volatile unsigned long*)mmap(0, 0x1000, PROT_READ|PROT_WRITE, MAP_SHARED, mem_fd, mem2memdma_register)))
 			{
 				printf("Mainmemory: <Memmapping failed>\n");
 				return;
@@ -795,10 +793,6 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		}
 
 		t=t2=dat1=0;
-		int chr_luma_stride = 0x40;
-
-		if (stb_type == BRCM7405 || stb_type == BRCM7346)
-			chr_luma_stride *= 2;
 
 		xsub=chr_luma_stride;
 		// decode luma & chroma plane or lets say sort it
