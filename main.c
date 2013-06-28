@@ -82,8 +82,8 @@ void fast_resize(const unsigned char *source, unsigned char *dest, int xsource, 
 void (*resize)(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
 void combine(unsigned char *output, const unsigned char *video, const unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
-enum {UNKNOWN,PALLAS,VULCAN,XILLEON,BRCM7400,BRCM7401,BRCM7405,BRCM7335,BRCM7358};
-char *stb_name[]={"unknown","Pallas","Vulcan","Xilleon","Brcm7400","Brcm7401","Brcm7405","Brcm7335","Brcm7358"};
+enum {UNKNOWN,PALLAS,VULCAN,XILLEON,BRCM7400,BRCM7401,BRCM7405,BRCM7335,BRCM7358,BRCM7346};
+char *stb_name[]={"unknown","Pallas","Vulcan","Xilleon","Brcm7400","Brcm7401","Brcm7405","Brcm7335","Brcm7358","Brcm7346"};
 int stb_type=UNKNOWN;
 
 // main program
@@ -211,6 +211,11 @@ int main(int argc, char **argv)
 			else if (strcasestr(buf,"7358"))
 			{
 				stb_type = BRCM7358;
+				break;
+			}
+			else if (strcasestr(buf,"7356"))
+			{
+				stb_type = BRCM7346;
 				break;
 			}
 			else if (strcasestr(buf,"XILLEON"))
@@ -652,10 +657,10 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 	char buf[256];
 	FILE *fp;
 
-	if (stb_type == BRCM7401 || stb_type == BRCM7400 || stb_type == BRCM7405 || stb_type == BRCM7335 || stb_type == BRCM7358)
+	if (stb_type == BRCM7401 || stb_type == BRCM7400 || stb_type == BRCM7405 || stb_type == BRCM7335 || stb_type == BRCM7358 || stb_type == BRCM7346)
 	{
 		// grab brcm7401 pic from decoder memory
-		const unsigned char* data = (unsigned char*)mmap(0, 100, PROT_READ, MAP_SHARED, mem_fd, (stb_type == BRCM7358) ? 0x10600000 : 0x10100000);
+		const unsigned char* data = (unsigned char*)mmap(0, 100, PROT_READ, MAP_SHARED, mem_fd, ((stb_type == BRCM7358) || (stb_type == BRCM7346)) ? 0x10600000 : 0x10100000);
 		if(!data)
 		{
 			printf("Mainmemory: <Memmapping failed>\n");
@@ -671,6 +676,14 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			ofs=data[0x3c]<<4; // luma lines
 			ofs2=data[0x40]<<4;// chroma lines
 			adr=(data[0x1f]<<24|data[0x1e]<<16|data[0x1d]<<8|data[0x1c])&0xFFFFFF00; // start of  videomem
+			adr2=(data[0x37]<<24|data[0x36]<<16|data[0x35]<<8|data[0x34])&0xFFFFFF00;
+		}
+		else if(stb_type == BRCM7346)
+		{
+			stride=data[0x15]<<8|data[0x14];
+			ofs=(data[0x3c]<<8|data[0x3b])>>4;
+			ofs2=(data[0x40]<<8|data[0x3f])>>4;
+			adr=(data[0x1f]<<24|data[0x1e]<<16|data[0x1d]<<8|data[0x1c])&0xFFFFFF00;
 			adr2=(data[0x37]<<24|data[0x36]<<16|data[0x35]<<8|data[0x34])&0xFFFFFF00;
 		}
 		else
@@ -708,7 +721,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 
 		int memory_tmp_size = 0;
 		// grabbing luma & chroma plane from the decoder memory
-		if (stb_type == BRCM7401 || stb_type == BRCM7405 || stb_type == BRCM7358)
+		if (stb_type == BRCM7401 || stb_type == BRCM7405 || stb_type == BRCM7358 || stb_type == BRCM7346)
 		{
 			// on dm800/dm500hd we have direct access to the decoder memory
 			memory_tmp_size = offset + stride*(ofs2+64);
@@ -784,7 +797,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		t=t2=dat1=0;
 		int chr_luma_stride = 0x40;
 
-		if (stb_type == BRCM7405)
+		if (stb_type == BRCM7405 || stb_type == BRCM7346)
 			chr_luma_stride *= 2;
 
 		xsub=chr_luma_stride;
