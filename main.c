@@ -88,8 +88,8 @@ int stb_type=UNKNOWN;
 
 // main program
 
-int main(int argc, char **argv) {
-
+int main(int argc, char **argv)
+{
 	printf("AiO Screengrabber "PACKAGE_VERSION"\n\n");
 
 	int xres_v,yres_v,xres_o,yres_o,xres,yres,aspect;
@@ -118,6 +118,7 @@ int main(int argc, char **argv) {
 		printf("No framebuffer, unknown STB .. quit.\n");
 		return 1;
 	}
+
 	while (fgets(buf,sizeof(buf),pipe))
 	{
 		if (strcasestr(buf,"VULCAN")) stb_type=VULCAN;
@@ -180,7 +181,9 @@ int main(int argc, char **argv) {
 			}
 		}
 	}
+
 	pipe = fopen("/proc/stb/info/chipset", "r");
+
 	if (pipe)
 	{
 		while (fgets(buf,sizeof(buf),pipe))
@@ -308,6 +311,7 @@ int main(int argc, char **argv) {
 		sprintf(filename,"%s", argv[optind]);
 
 	int mallocsize=1920*1080;
+
 	if (stb_type == VULCAN || stb_type == PALLAS)
 		mallocsize=720*576;
 
@@ -337,7 +341,8 @@ int main(int argc, char **argv) {
 				sscanf(buf,"A_RATIO: %d",&aspect);
 			fclose(pipe);
 		}
-	} else
+	}
+	else
 	{
 		pipe = fopen("/proc/stb/vmpeg/0/aspect", "r");
 		if (pipe)
@@ -383,15 +388,18 @@ int main(int argc, char **argv) {
 	{
 		xres=xres_v;
 		yres=yres_v;
-	} else if (osd_only)
+	}
+	else if (osd_only)
 	{
 		xres=xres_o;
 		yres=yres_o;
-	} else if (xres_o == xres_v && yres_o == yres_v && !dst_top && !dst_left && !dst_width && !dst_height)
+	}
+	else if (xres_o == xres_v && yres_o == yres_v && !dst_top && !dst_left && !dst_width && !dst_height)
 	{
 		xres=xres_v;
 		yres=yres_v;
-	} else
+	}
+	else
 	{
 		if (xres_v > xres_o && !use_osd_res && (width == 0 || width > xres_o))
 		{
@@ -438,7 +446,6 @@ int main(int argc, char **argv) {
 		}
 	}
 
-
 	// merge video and osd if neccessary
 	if (osd_only)
 	{
@@ -446,13 +453,14 @@ int main(int argc, char **argv) {
 		output_bytes=4;
 	}
 	else if (video_only)
+	{
 		memcpy(output,video,xres*yres*3);
+	}
 	else
 	{
 		printf("Merge Video with Framebuffer ...\n");
 		combine(output, video, osd, dst_left, dst_top, dst_width ? dst_width : xres, dst_height ? dst_height : yres, xres, yres);
 	}
-
 
 	// resize to specific width ?
 	if (width)
@@ -464,7 +472,6 @@ int main(int argc, char **argv) {
 		memcpy(output,osd,xres*yres*output_bytes);
 	}
 
-
 	// correct aspect ratio
 	if (!no_aspect && aspect == 3 && ((float)xres/(float)yres)<1.5)
 	{
@@ -473,7 +480,6 @@ int main(int argc, char **argv) {
 		yres/=1.42;
 		memcpy(output,osd,xres*yres*output_bytes);
 	}
-
 
 	// use letterbox ?
 	if (use_letterbox && xres*0.8 != yres && xres*0.8 <= 1080)
@@ -491,7 +497,6 @@ int main(int argc, char **argv) {
 		}
 		yres=yres_neu;
 	}
-
 
 	// saving picture
 	printf("Saving %d bit %s ...\n",(use_jpg?3*8:output_bytes*8),filename);
@@ -519,10 +524,10 @@ int main(int argc, char **argv) {
 		fwrite(hdr, 1, i, fd2);
 
 		int y;
-		for (y=yres-1; y>=0 ; y-=1) {
+		for (y=yres-1; y>=0 ; y-=1)
 			fwrite(output+(y*xres*output_bytes),xres*output_bytes,1,fd2);
-		}
-	} else if (use_png)
+	}
+	else if (use_png)
 	{
 		// write png
 		png_bytep *row_pointers;
@@ -547,7 +552,8 @@ int main(int argc, char **argv) {
 		png_destroy_write_struct(&png_ptr, &info_ptr);
 
 		free(row_pointers);
-	} else
+	}
+	else
 	{
 		// write jpg
 		if (output_bytes == 3) // swap bgr<->rgb
@@ -631,7 +637,8 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 	int mem_fd;
 	//unsigned char *memory;
 	void *memory;
-	if ((mem_fd = open("/dev/mem", O_RDWR|O_SYNC) ) < 0) {
+	if ((mem_fd = open("/dev/mem", O_RDWR|O_SYNC) ) < 0)
+	{
 		printf("Mainmemory: can't open /dev/mem \n");
 		return;
 	}
@@ -830,7 +837,8 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			SWAP(p[0], p[3]);
 			SWAP(p[1], p[2]);
 		}
-	} else if (stb_type == XILLEON)
+	}
+	else if (stb_type == XILLEON)
 	{
 		// grab xilleon pic from decoder memory
 		pipe = fopen("/proc/stb/vmpeg/0/xres","r");
@@ -989,7 +997,8 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 
 		munmap(memory, 1920*1152*6);
 
-	} else if (stb_type == VULCAN || stb_type == PALLAS)
+	}
+	else if (stb_type == VULCAN || stb_type == PALLAS)
 	{
 		// grab via v4l device (ppc boxes)
 
@@ -1178,7 +1187,8 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 			}
 			pos2+=ofs;
 		}
-	} else if ( var_screeninfo.bits_per_pixel == 8 )
+	}
+	else if ( var_screeninfo.bits_per_pixel == 8 )
 	{
 		printf("Grabbing 8bit Framebuffer ...\n");
 		unsigned short color;
@@ -1222,7 +1232,8 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 
 				pos2++;
 			}
-		} else if (stb_type == PALLAS) // DM70x0 stores the colors in plain rgb values
+		}
+		else if (stb_type == PALLAS) // DM70x0 stores the colors in plain rgb values
 		{
 			pos2 = 0;
 			for (pos1=32; pos1<(256*4)+32; pos1+=4)
@@ -1233,7 +1244,8 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 				tr[pos2]=memory[pos1];
 				pos2++;
 			}
-		} else
+		}
+		else
 		{
 			printf("unsupported framebuffermode\n");
 			return;
