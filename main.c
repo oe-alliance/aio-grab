@@ -247,7 +247,7 @@ int main(int argc, char **argv)
 			registeroffset = 0x10100000;
 			chr_luma_stride = 0x40;
 			chr_luma_register_offset = 0x20;
-			mem2memdma_register = 0x10c02000;
+			mem2memdma_register = 0x10c01000;
 			break;
 		case BRCM7358:
 			registeroffset = 0x10600000;
