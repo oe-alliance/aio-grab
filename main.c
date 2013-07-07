@@ -82,8 +82,8 @@ void fast_resize(const unsigned char *source, unsigned char *dest, int xsource, 
 void (*resize)(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
 void combine(unsigned char *output, const unsigned char *video, const unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
-enum {UNKNOWN,PALLAS,VULCAN,XILLEON,BRCM7400,BRCM7401,BRCM7403,BRCM7405,BRCM7335,BRCM7358,GIGABLUE,AZBOX863x,AZBOX865x,BRCM7325,BRCM7346,BRCM7356,BRCM7424,BRCM7425};
-char *stb_name[]={"unknown","Pallas","Vulcan","Xilleon","Brcm7400","Brcm7401","Brcm7403","Brcm7405","Brcm7335","Brcm7358","Gigablue","Azbox863x","Azbox865x","Brcm7325","Brcm7346","Brcm7356","Brcm7424","Brcm7425"};
+enum {UNKNOWN,PALLAS,VULCAN,XILLEON,BRCM7400,BRCM7401,BRCM7403,BRCM7405,BRCM7335,BRCM7358,GIGABLUE,AZBOX863x,AZBOX865x,BRCM7325,BRCM7346,BRCM7356,BRCM7425};
+char *stb_name[]={"unknown","Pallas","Vulcan","Xilleon","Brcm7400","Brcm7401","Brcm7403","Brcm7405","Brcm7335","Brcm7358","Gigablue","Azbox863x","Azbox865x","Brcm7325","Brcm7346","Brcm7356","Brcm7425"};
 int stb_type=UNKNOWN;
 
 // main program
@@ -266,7 +266,7 @@ int main(int argc, char **argv) {
 			}
 			else if (strcasestr(buf,"7424"))
 			{
-				stb_type = BRCM7424;
+				stb_type = BRCM7425;
 				break;
 			}			
 			else if (strcasestr(buf,"XILLEON"))
@@ -702,7 +702,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 	if (stb_type == BRCM7401 || stb_type == BRCM7403 || stb_type == BRCM7400 || stb_type == BRCM7405 || stb_type == BRCM7335 || stb_type == BRCM7325 || stb_type == BRCM7358 || stb_type == BRCM7346 || stb_type == BRCM7425)
 	{
 		// grab brcm7401 pic from decoder memory
-		const unsigned char* data = (unsigned char*)mmap(0, 100, PROT_READ, MAP_SHARED, mem_fd, (stb_type == BRCM7358 || stb_type == BRCM7346 || stb_type == BRCM7425) ? 0x10600000 : 0x10100000);
+		const unsigned char* data = (unsigned char*)mmap(0, 100, PROT_READ, MAP_SHARED, mem_fd, (stb_type == BRCM7358 || stb_type == BRCM7346 ) ? 0x10600000 : 0x10100000);
 		if(!data)
 		{
 			printf("Mainmemory: <Memmapping failed>\n");
