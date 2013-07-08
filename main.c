@@ -702,7 +702,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 	if (stb_type == BRCM7401 || stb_type == BRCM7403 || stb_type == BRCM7400 || stb_type == BRCM7405 || stb_type == BRCM7335 || stb_type == BRCM7325 || stb_type == BRCM7358 || stb_type == BRCM7346 || stb_type == BRCM7425)
 	{
 		// grab brcm7401 pic from decoder memory
-		const unsigned char* data = (unsigned char*)mmap(0, 100, PROT_READ, MAP_SHARED, mem_fd, (stb_type == BRCM7358 || stb_type == BRCM7346 ) ? 0x10600000 : 0x10100000);
+		const unsigned char* data = (unsigned char*)mmap(0, 100, PROT_READ, MAP_SHARED, mem_fd, (stb_type == BRCM7358 || stb_type == BRCM7346 || stb_type == BRCM7425) ? 0x10600000 : 0x10100000);
 		if(!data)
 		{
 			printf("Mainmemory: <Memmapping failed>\n");
@@ -722,7 +722,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			adr=(data[0x1f]<<24|data[0x1e]<<16|data[0x1d]<<8|data[0x1c])&0xFFFFFF00; // start of  videomem
 			adr2=(data[0x23]<<24|data[0x22]<<16|data[0x21]<<8|data[0x20])&0xFFFFFF00;
 		} 
-		else if(stb_type == BRCM7358)
+		else if(stb_type == BRCM7358 || stb_type == BRCM7346 || stb_type == BRCM7425)
 		{
 			stride=data[0x15]<< 8|data[0x14];
 			ofs=data[0x3c]<<4; // luma lines
