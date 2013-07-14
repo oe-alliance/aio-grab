@@ -715,14 +715,14 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		//printf("Adr: %X Adr2: %X OFS: %d %d\n",adr,adr2,ofs,ofs2);
 
 		luma = (unsigned char *)malloc(stride*(ofs));
-		chroma = (unsigned char *)malloc(stride*(ofs2+64));
+		chroma = (unsigned char *)malloc(stride * ofs2);
 
 		int memory_tmp_size = 0;
 		// grabbing luma & chroma plane from the decoder memory
 		if (!mem2memdma_register)
 		{
 			// we have direct access to the decoder memory
-			memory_tmp_size = offset + stride*(ofs2+64);
+			memory_tmp_size = offset + (stride + chr_luma_stride) * ofs2;
 			if(!(memory_tmp = (unsigned char*)mmap(0, memory_tmp_size, PROT_READ, MAP_SHARED, mem_fd, adr)))
 			{
 				printf("Mainmemory: <Memmapping failed>\n");
@@ -736,7 +736,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		}
 		else
 		{
-			int tmp_size = offset + stride*(ofs2+64);
+			int tmp_size = offset + (stride + chr_luma_stride) * ofs2;
 			if (tmp_size > 2 * DMA_BLOCKSIZE)
 			{
 				printf("Got invalid stride value from the decoder: %d\n", stride);
