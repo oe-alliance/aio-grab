@@ -835,7 +835,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			SWAP(p[0], p[3]);
 			SWAP(p[1], p[2]);
 		}
-		count = (stride*(ofs>>1)) >> 2;
+		count = (stride*ofs2) >> 2;
 		#pragma omp parallel for 
 		for (t = 0; t < count; ++t)
 		{
