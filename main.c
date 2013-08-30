@@ -148,6 +148,11 @@ int main(int argc, char **argv)
 					stb_type = BRCM7401;
 					break;
 				}
+				else if (strstr(buf,"7403"))
+				{
+					stb_type = BRCM7401;
+					break;
+				}				
 				else if (strstr(buf,"7405"))
 				{
 					stb_type = BRCM7405;
