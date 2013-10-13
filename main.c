@@ -707,7 +707,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			return;
 		}
 
-		int adr,adr2,ofs,ofs2,offset/*,vert_start,vert_end*/;
+		int adr, adr2, ofs, ofs2, offset, pageoffset;
 		int xtmp,xsub,ytmp,t2,dat1;
 
 		ofs = data[chr_luma_register_offset + 8] << 4; /* luma lines */
@@ -716,6 +716,9 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		stride = data[0x15] << 8 | data[0x14];
 		adr = data[0x1f] << 24 | data[0x1e] << 16 | data[0x1d] << 8; /* start of videomem */
 		offset = adr2 - adr;
+		pageoffset = adr & 0xfff;
+		adr -= pageoffset;
+		adr2 -= pageoffset;
 
 		munmap((void*)data, 100);
 
@@ -825,7 +828,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			dat1=xtmp;
 			for (ytmp = 0; ytmp < ofs; ytmp++)
 			{
-				memcpy(luma+dat1,memory_tmp+t,xsub); // luma
+				memcpy(luma+dat1,memory_tmp+pageoffset+t,xsub); // luma
 				t+=chr_luma_stride;
 				dat1+=stride;
 			}
@@ -840,7 +843,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			dat1=xtmp;
 			for (ytmp = 0; ytmp < ofs2; ytmp++)
 			{
-				memcpy(chroma+dat1,memory_tmp+offset+t2,xsub); // chroma
+				memcpy(chroma+dat1,memory_tmp+pageoffset+offset+t2,xsub); // chroma
 				t2+=chr_luma_stride;
 				dat1+=stride;
 			}
