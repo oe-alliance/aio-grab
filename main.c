@@ -37,6 +37,10 @@ Feel free to use the code for your own projects. See LICENSE file for details.
 #include <sys/mman.h>
 #include <linux/types.h>
 #include <linux/fb.h>
+
+/* HACK: jpeglib.h redefines our VERSION variable */
+const char *GRABVERSION = VERSION;
+
 #include "png.h"
 #include "jpeglib.h"
 
@@ -93,7 +97,7 @@ static unsigned int mem2memdma_register = 0;
 
 int main(int argc, char **argv)
 {
-	printf("AiO Screengrabber "PACKAGE_VERSION"\n\n");
+	printf("AiO Screengrabber %s\n\n", GRABVERSION);
 
 	int xres_v,yres_v,xres_o,yres_o,xres,yres,aspect;
 	int c,osd_only,video_only,use_osd_res,width,use_png,use_jpg,jpg_quality,no_aspect,use_letterbox;
