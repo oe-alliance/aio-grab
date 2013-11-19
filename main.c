@@ -86,7 +86,7 @@ void fast_resize(const unsigned char *source, unsigned char *dest, int xsource, 
 void (*resize)(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
 void combine(unsigned char *output, const unsigned char *video, const unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
-static enum {UNKNOWN, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7358, BRCM7356, BRCM7424, BRCM7425, SU980} stb_type = UNKNOWN;
+static enum {UNKNOWN, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7358, BRCM7356, BRCM7424, BRCM7425} stb_type = UNKNOWN;
 
 static int chr_luma_stride = 0x40;
 static int chr_luma_register_offset = 0;
@@ -132,8 +132,7 @@ int main(int argc, char **argv)
 		if (strcasestr(buf,"PALLAS")) stb_type=PALLAS;
 		if (strcasestr(buf,"XILLEON")) stb_type=XILLEON;
 		if (strcasestr(buf,"EM863x")) stb_type=AZBOX863x;
-		if (strcasestr(buf,"EM865x")) stb_type=AZBOX865x;
-		if (strcasestr(buf,"0")) stb_type=SU980;
+		if (strcasestr(buf,"EM865x")) stb_type=AZBOX865x;		
 	}
 	fclose(fp);
 
