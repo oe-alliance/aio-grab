@@ -109,8 +109,7 @@ int main(int argc, char **argv)
 	unsigned char *video, *osd, *output;
 	int output_bytes=3;
 
-	char filename[256];
-	sprintf(filename,"/tmp/screenshot.bmp");
+	const char* filename = "/tmp/screenshot.bmp";
 
 	// detect STB
 	char buf[256];
@@ -283,7 +282,7 @@ int main(int argc, char **argv)
 	}
 
 	// process command line
-	while ((c = getopt (argc, argv, "dhj:lbnopr:v")) != -1)
+	while ((c = getopt (argc, argv, "dhj:lbnopr:sv")) != -1)
 	{
 		switch (c)
 		{
@@ -302,6 +301,7 @@ int main(int argc, char **argv)
 					"-b use bicubic picture resize (slow but smooth)\n"
 					"-j (quality) produce jpg files instead of bmp (quality 0-100)\n"
 					"-p produce png files instead of bmp\n"
+					"-s write to stdout instead of a file\n"
 					"-h this help screen\n\n"
 					"If no command is given the complete picture will be grabbed.\n"
 					"If no filename is given /tmp/screenshot.[bmp/jpg/png] will be used.\n");
@@ -326,6 +326,9 @@ int main(int argc, char **argv)
 					return 1;
 				}
 				break;
+			case 's': // stdout
+				filename = NULL;
+				break;
 			case 'l': // create letterbox
 				use_letterbox=1;
 				break;
@@ -335,13 +338,15 @@ int main(int argc, char **argv)
 			case 'p': // use png file format
 				use_png=1;
 				use_jpg=0;
-				sprintf(filename,"/tmp/screenshot.png");
+				if (filename)
+					filename = "/tmp/screenshot.png";
 				break;
 			case 'j': // use jpg file format
 				use_jpg=1;
 				use_png=0;
 				jpg_quality=atoi(optarg);
-				sprintf(filename,"/tmp/screenshot.jpg");
+				if (filename)
+					filename = "/tmp/screenshot.jpg";
 				break;
 			case 'n':
 				no_aspect=1;
@@ -349,7 +354,7 @@ int main(int argc, char **argv)
 		}
 	}
 	if (optind < argc) // filename
-		sprintf(filename,"%s", argv[optind]);
+		filename = argv[optind];
 
 	int mallocsize=1920*1080;
 
@@ -540,9 +545,19 @@ int main(int argc, char **argv)
 	}
 
 	// saving picture
-	fprintf(stderr, "Saving %d bit %s ...\n",(use_jpg?3*8:output_bytes*8),filename);
-	FILE *fd2 = fopen(filename, "wr");
-	if (!fd2) return 1;
+	fprintf(stderr, "Saving %d bit %s ...\n",(use_jpg?3*8:output_bytes*8), filename ? filename : "<stdout>");
+	FILE *fd2;
+	if (filename)
+	{
+		fd2 = fopen(filename, "wr");
+		if (!fd2)
+		{
+			fprintf(stderr, "Failed to open '%s' for output\n", filename);
+			return 1;
+		}
+	}
+	else
+		fd2 = stdout;
 
 	if (!use_png && !use_jpg)
 	{
@@ -657,7 +672,8 @@ int main(int argc, char **argv)
 		jpeg_destroy_compress(&cinfo);
 	}
 
-	fclose(fd2);
+	if (filename)
+		fclose(fd2);
 
 	// Thats all folks
 	fprintf(stderr, "... Done !\n");
