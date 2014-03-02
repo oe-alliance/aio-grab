@@ -611,6 +611,7 @@ int main(int argc, char **argv)
 	}
 	else
 	{
+		const int row_stride = xres * output_bytes;
 		// write jpg
 		if (output_bytes == 3) // swap bgr<->rgb
 		{
@@ -634,14 +635,15 @@ int main(int argc, char **argv)
 			#pragma omp parallel for shared(output)
 			for (y=0; y<yres; y++)
 			{
-				int xres1=y*xres*3;
-				int xres2=xres1+2;
+				unsigned char *scanline = output + (y * row_stride);
 				int x;
 				for (x=0; x<xres; x++)
 				{
-					int x2=x*3;
-					memcpy(output+x2+xres1,output+x*4+y*xres*4,3);
-					SWAP(output[x2+xres1],output[x2+xres2]);
+					const int xs = x * 4;
+					const int xd = x * 3;
+					scanline[xd + 0] = scanline[xs + 2];
+					scanline[xd + 1] = scanline[xs + 1];
+					scanline[xd + 2] = scanline[xs + 0];
 				}
 			}
 		}
@@ -649,7 +651,6 @@ int main(int argc, char **argv)
 		struct jpeg_compress_struct cinfo;
 		struct jpeg_error_mgr jerr;
 		JSAMPROW row_pointer[1];
-		int row_stride;
 		cinfo.err = jpeg_std_error(&jerr);
 
 		jpeg_create_compress(&cinfo);
@@ -662,7 +663,6 @@ int main(int argc, char **argv)
 		jpeg_set_defaults(&cinfo);
 		jpeg_set_quality(&cinfo,jpg_quality, TRUE);
 		jpeg_start_compress(&cinfo, TRUE);
-		row_stride = xres * 3;
 		while (cinfo.next_scanline < cinfo.image_height)
 		{
 			row_pointer[0] = & output[cinfo.next_scanline * row_stride];
