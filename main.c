@@ -89,6 +89,7 @@ static int chr_luma_stride = 0x40;
 static int chr_luma_register_offset = 0;
 static unsigned int registeroffset = 0;
 static unsigned int mem2memdma_register = 0;
+static int quiet = 0;
 
 // main program
 
@@ -282,7 +283,7 @@ int main(int argc, char **argv)
 	}
 
 	// process command line
-	while ((c = getopt (argc, argv, "dhj:lbnopr:sv")) != -1)
+	while ((c = getopt (argc, argv, "dhj:lbnopqr:sv")) != -1)
 	{
 		switch (c)
 		{
@@ -301,6 +302,7 @@ int main(int argc, char **argv)
 					"-b use bicubic picture resize (slow but smooth)\n"
 					"-j (quality) produce jpg files instead of bmp (quality 0-100)\n"
 					"-p produce png files instead of bmp\n"
+					"-q Quiet mode, don't output debug messages\n"
 					"-s write to stdout instead of a file\n"
 					"-h this help screen\n\n"
 					"If no command is given the complete picture will be grabbed.\n"
@@ -317,6 +319,9 @@ int main(int argc, char **argv)
 			case 'd': // always use OSD resolution
 				use_osd_res=1;
 				no_aspect=1;
+				break;
+			case 'q': // quiet
+				++quiet;
 				break;
 			case 'r': // use given resolution
 				width=atoi(optarg);
@@ -375,7 +380,11 @@ int main(int argc, char **argv)
 
 	// get video
 	if (!osd_only)
+	{
+		if (!quiet)
+			fprintf(stderr, "Grabbing Video ...\n");
 		getvideo(video,&xres_v,&yres_v);
+	}
 
 	// get aspect ratio
 	if (stb_type == VULCAN || stb_type == PALLAS)
@@ -479,13 +488,15 @@ int main(int argc, char **argv)
 		}
 		if (xres_o != xres || yres_o != yres)
 		{
-			fprintf(stderr, "Resizing OSD to %d x %d ...\n", xres, yres);
+			if (!quiet)
+				fprintf(stderr, "Resizing OSD to %d x %d ...\n", xres, yres);
 			resize(osd, output, xres_o, yres_o, xres, yres, 4);
 			memcpy(osd, output, xres * yres * 4);
 		}
 		if (xres_v != dst_width || yres_v != dst_height)
 		{
-			fprintf(stderr, "Resizing Video to %d x %d ...\n", dst_width, dst_height);
+			if (!quiet)
+				fprintf(stderr, "Resizing Video to %d x %d ...\n", dst_width, dst_height);
 			resize(video, output, xres_v, yres_v, dst_width, dst_height, 3);
 			memset(video, 0, xres_v * yres_v * 3);
 			memcpy(video, output, dst_width * dst_height * 3);
@@ -504,14 +515,16 @@ int main(int argc, char **argv)
 	}
 	else
 	{
-		fprintf(stderr, "Merge Video with Framebuffer ...\n");
+		if (!quiet)
+			fprintf(stderr, "Merge Video with Framebuffer ...\n");
 		combine(output, video, osd, dst_left, dst_top, dst_width ? dst_width : xres, dst_height ? dst_height : yres, xres, yres);
 	}
 
 	// resize to specific width ?
 	if (width)
 	{
-		fprintf(stderr, "Resizing Screenshot to %d x %d ...\n",width,yres*width/xres);
+		if (!quiet)
+			fprintf(stderr, "Resizing Screenshot to %d x %d ...\n",width,yres*width/xres);
 		resize(output,osd,xres,yres,width,(yres*width/xres),output_bytes);
 		yres=yres*width/xres;
 		xres=width;
@@ -521,7 +534,8 @@ int main(int argc, char **argv)
 	// correct aspect ratio
 	if (!no_aspect && aspect == 3 && ((float)xres/(float)yres)<1.5)
 	{
-		fprintf(stderr, "Correct aspect ratio to 16:9 ...\n");
+		if (!quiet)
+			fprintf(stderr, "Correct aspect ratio to 16:9 ...\n");
 		resize(output,osd,xres,yres,xres,yres/1.42,output_bytes);
 		yres/=1.42;
 		memcpy(output,osd,xres*yres*output_bytes);
@@ -532,7 +546,8 @@ int main(int argc, char **argv)
 	{
 		int yres_neu;
 		yres_neu=xres*0.8;
-		fprintf(stderr, "Create letterbox %d x %d ...\n",xres,yres_neu);
+		if (!quiet)
+			fprintf(stderr, "Create letterbox %d x %d ...\n",xres,yres_neu);
 		if (yres_neu > yres)
 		{
 			int ofs;
@@ -545,7 +560,8 @@ int main(int argc, char **argv)
 	}
 
 	// saving picture
-	fprintf(stderr, "Saving %d bit %s ...\n",(use_jpg?3*8:output_bytes*8), filename ? filename : "<stdout>");
+	if (!quiet)
+			fprintf(stderr, "Saving %d bit %s ...\n",(use_jpg?3*8:output_bytes*8), filename ? filename : "<stdout>");
 	FILE *fd2;
 	if (filename)
 	{
@@ -676,7 +692,8 @@ int main(int argc, char **argv)
 		fclose(fd2);
 
 	// Thats all folks
-	fprintf(stderr, "... Done !\n");
+	if (!quiet)
+		fprintf(stderr, "... Done !\n");
 
 	// clean up
 	free(video);
@@ -690,7 +707,6 @@ int main(int argc, char **argv)
 
 void getvideo(unsigned char *video, int *xres, int *yres)
 {
-	fprintf(stderr, "Grabbing Video ...\n");
 	int mem_fd;
 	//unsigned char *memory;
 	void *memory;
@@ -1078,7 +1094,6 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 	close(mem_fd);
 
 	// yuv2rgb conversion (4:2:0)
-	fprintf(stderr, "... converting Video from YUV to RGB color space\n");
 	const int rgbstride = stride * 3;
 	const int scans = res / 2;
 	int y;
@@ -1142,7 +1157,6 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 
 	*xres=stride;
 	*yres=res;
-	fprintf(stderr, "... Video-Size: %d x %d\n",*xres,*yres);
 	free(luma);
 	free(chroma);
 }
@@ -1187,7 +1201,8 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 
 	if ( var_screeninfo.bits_per_pixel == 32 )
 	{
-		fprintf(stderr, "Grabbing 32bit Framebuffer ...\n");
+		if (!quiet)
+			fprintf(stderr, "Grabbing 32bit Framebuffer ...\n");
 
 		// get 32bit framebuffer
 		pos=pos1=pos2=0;
@@ -1208,7 +1223,8 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 		}
 	} else if ( var_screeninfo.bits_per_pixel == 16 )
 	{
-		fprintf(stderr, "Grabbing 16bit Framebuffer ...\n");
+		if (!quiet)
+			fprintf(stderr, "Grabbing 16bit Framebuffer ...\n");
 		unsigned short color;
 
 		// get 16bit framebuffer
@@ -1231,7 +1247,8 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 	}
 	else if ( var_screeninfo.bits_per_pixel == 8 )
 	{
-		fprintf(stderr, "Grabbing 8bit Framebuffer ...\n");
+		if (!quiet)
+			fprintf(stderr, "Grabbing 8bit Framebuffer ...\n");
 		unsigned short color;
 
 		// Read Color Palette directly from the main memory, because the FBIOGETCMAP is buggy on dream and didnt
@@ -1314,7 +1331,8 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 
 	*xres=var_screeninfo.xres;
 	*yres=var_screeninfo.yres;
-	fprintf(stderr, "... Framebuffer-Size: %d x %d\n",*xres,*yres);
+	if (!quiet)
+		fprintf(stderr, "... Framebuffer-Size: %d x %d\n",*xres,*yres);
 }
 
 // bicubic pixmap resizing
