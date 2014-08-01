@@ -34,12 +34,49 @@ Feel free to use the code for your own projects. See LICENSE file for details.
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
+#include <sys/time.h>
 #include <sys/mman.h>
 #include <linux/types.h>
 #include <linux/fb.h>
+#include <bpamem.h>
 
 #include "png.h"
 #include "jpeglib.h"
+
+#define OUT(x) \
+	out[OUTITER]=(unsigned char)*(decode_surface + x)&0xFF; \
+	OUTITER+=OUTINC;
+
+#define OUT4(x) \
+	OUT(x + 0x03); \
+	OUT(x + 0x02); \
+	OUT(x + 0x01); \
+	OUT(x + 0x00);
+
+#define OUT8(x) \
+	OUT4(x + 0x04); \
+	OUT4(x + 0x00);
+
+#define OUT_LU_16A(x) \
+	OUT8(x); \
+	OUT8(x + 0x40);
+
+#define OUT_CH_8A(x) \
+	OUT4(x); \
+	OUT4(x + 0x20);
+
+//pppppppppppppppp
+//x: macroblock address
+//l: line 0-15
+#define OUT_LU_16(x,l) \
+	OUT_LU_16A(x + (l/4) * 0x10 + (l%2) * 0x80 + ((l/2)%2?0x00:0x08));
+
+//pppppppp
+//x: macroblock address
+//l: line 0-7
+//b: 0=cr 1=cb
+#define OUT_CH_8(x,l,b) \
+	OUT_CH_8A(x + (l/4) * 0x10 + (l%2) * 0x40 + ((l/2)%2?0x00:0x08) + (b?0x04:0x00));
 
 #define CLAMP(x)    ((x < 0) ? 0 : ((x > 255) ? 255 : x))
 #define SWAP(x,y)	{ x ^= y; y ^= x; x ^= y; }
@@ -52,6 +89,29 @@ Feel free to use the code for your own projects. See LICENSE file for details.
 #define CBFB(x)  ((((x) >> (6)) & 0xf) << 4)
 #define CRFB(x)   ((((x) >> (2)) & 0xf) << 4)
 #define BFFB(x)   ((((x) >> (0)) & 0x3) << 6)
+
+int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y)
+{
+	/* Perform the carry for the later subtraction by updating y. */
+	if (x->tv_usec < y->tv_usec) {
+		int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
+		y->tv_usec -= 1000000 * nsec;
+		y->tv_sec += nsec;
+	}
+	if (x->tv_usec - y->tv_usec > 1000000) {
+		int nsec = (x->tv_usec - y->tv_usec) / 1000000;
+		y->tv_usec += 1000000 * nsec;
+		y->tv_sec -= nsec;
+	}
+
+	/* Compute the time remaining to wait.
+	  tv_usec is certainly positive. */
+	result->tv_sec = x->tv_sec - y->tv_sec;
+	result->tv_usec = x->tv_usec - y->tv_usec;
+
+	/* Return 1 if result is negative. */
+	return x->tv_sec < y->tv_sec;
+}
 
 #define VIDEO_DEV "/dev/video"
 
@@ -83,7 +143,7 @@ void fast_resize(const unsigned char *source, unsigned char *dest, int xsource, 
 void (*resize)(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
 void combine(unsigned char *output, const unsigned char *video, const unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
-static enum {UNKNOWN, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7356, BRCM7424, BRCM7425} stb_type = UNKNOWN;
+static enum {UNKNOWN, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7356, BRCM7424, BRCM7425} stb_type = UNKNOWN;
 
 static int chr_luma_stride = 0x40;
 static int chr_luma_register_offset = 0;
@@ -128,6 +188,7 @@ int main(int argc, char **argv)
 		if (strcasestr(buf,"XILLEON")) stb_type=XILLEON;
 		if (strcasestr(buf,"EM863x")) stb_type=AZBOX863x;
 		if (strcasestr(buf,"EM865x")) stb_type=AZBOX865x;		
+		if (strcasestr(buf,"STi") || strcasestr(buf,"STx")) stb_type=ST;
 	}
 	fclose(fp);
 
@@ -1033,6 +1094,256 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 	   	free(infos);		
 		close(fd);
 	}	
+	else if (stb_type == ST)
+	{
+		int yblock, xblock, iyblock, ixblock, yblockoffset, offset, layer_offset, OUTITER, OUTINC, OUTITERoffset;
+		int stride_half;
+		unsigned char *out;
+		unsigned char even, cr;
+		int fd_bpa;
+		int ioctlres;
+		BPAMemMapMemData bpa_data;
+		char bpa_mem_device[30];
+		char *decode_surface;
+		int delay;
+
+		fp = fopen("/proc/stb/vmpeg/0/xres","r");
+		if (fp)
+		{
+			while (fgets(buf,sizeof(buf),fp))
+			{
+				sscanf(buf,"%x",&stride);
+			}
+			fclose(fp);
+		}
+		fp = fopen("/proc/stb/vmpeg/0/yres","r");
+		if (fp)
+		{
+			while (fgets(buf,sizeof(buf),fp))
+			{
+				sscanf(buf,"%x",&res);
+			}
+			fclose(fp);
+		}
+
+		//if stride and res is zero than this is most probably a stillpicture
+		if(stride == 0) stride = 1280;
+		if(res == 0) res = 720;
+
+		stride_half = stride / 2;
+
+		luma   = (unsigned char *)malloc(stride * res);
+		chroma = (unsigned char *)malloc(stride * res / 2);
+		char *temp = (unsigned char *)malloc(4 * 1024 * 1024);
+		if( NULL == temp )  {
+			printf("can not allocate memory\n");
+			return;
+		}
+
+		memset(chroma, 0x80, stride * res / 2);
+		memset(luma, 0x00, stride * res); /* just to invalidate the page */
+		memset(temp, 0x00, 4 * 1024 * 1024); /* just to invalidate the page */
+
+		fd_bpa = open("/dev/bpamem0", O_RDWR);
+
+		if(fd_bpa < 0)
+		{
+			fprintf(stderr, "cannot access /dev/bpamem0! err = %d\n", fd_bpa);
+			return;
+		}
+
+		bpa_data.bpa_part  = "LMI_VID";
+		bpa_data.phys_addr = 0x00000000;
+		bpa_data.mem_size = 0;
+
+		fp = fopen("/proc/bpa2","r");
+		if (fp)
+		{
+			unsigned char found_part = 0;
+			unsigned long mem_size = 0;
+			unsigned long phys_addr = 0;
+			while (fgets(buf,sizeof(buf),fp))
+			{
+				if(found_part || strstr(buf, bpa_data.bpa_part) != NULL)
+				{
+					found_part = 1;
+					if (sscanf(buf, "- %lu B at %lx", &mem_size, &phys_addr) == 2)
+					{
+						if(mem_size > bpa_data.mem_size)
+						{
+							bpa_data.mem_size  = mem_size;
+							bpa_data.phys_addr = phys_addr;
+						}
+					}
+				}
+			}
+			fclose(fp);
+		}
+
+		printf("Using bpa2 part %s - 0x%lx %lu\n", bpa_data.bpa_part, bpa_data.phys_addr, bpa_data.mem_size);
+
+		//bpa_data.phys_addr = 0x4a824000;
+		//bpa_data.mem_size = 28311552;
+
+		ioctlres = ioctl(fd_bpa, BPAMEMIO_MAPMEM, &bpa_data); // request memory from bpamem
+		if(ioctlres)
+		{
+			fprintf(stderr, "cannot map required mem\n");
+			return;
+		}
+
+		sprintf(bpa_mem_device, "/dev/bpamem%d", bpa_data.device_num);
+		close(fd_bpa);
+
+		fd_bpa = open(bpa_mem_device, O_RDWR);
+
+		// if somebody forgot to add all bpamem devs then this gets really bad here
+		if(fd_bpa < 0)
+		{
+			fprintf(stderr, "cannot access %s! err = %d\n", bpa_mem_device, fd_bpa);
+			return;
+		}
+
+		char *decode_map = (char *)mmap(0, bpa_data.mem_size, PROT_WRITE|PROT_READ, MAP_SHARED, fd_bpa, 0);
+		if(decode_map == MAP_FAILED)
+		{
+			fprintf(stderr, "could not map bpa mem");
+			close(fd_bpa);
+			return;
+		}
+
+		fprintf(stderr, "decode surface size:  %d\n", bpa_data.mem_size );
+		//luma
+		layer_offset = 0;
+
+		//we do not have to round that every luma res will be a multiple of 16
+		yblock = res/16; //45
+		xblock = stride/16; //80
+
+		//thereby yblockoffset does also not to be rounded up
+		yblockoffset = xblock * 256/*16x16px*/ * 2/*2 block rows*/; //0xA000 for 1280
+
+		//printf("yblock: %u xblock:%u yblockoffset:0x%x\n", yblock, xblock, yblockoffset);
+
+		OUTITER       = 0;
+		OUTITERoffset = 0;
+		OUTINC        = 1; /*no spaces between pixel*/
+		out           = luma;
+ 
+		struct timeval start_tv;
+		struct timeval stop_tv;
+		struct timeval result_tv;
+
+
+		//wait_for_frame_sync
+		{
+			unsigned char old_frame[0x800]; /*first 2 luma blocks, 0:0 - 32:64*/
+			memcpy(old_frame, decode_map, 0x800);
+			gettimeofday(&start_tv, NULL);
+			memcmp(decode_map, old_frame, 0x800);
+			gettimeofday(&stop_tv, NULL);
+			for(delay = 0; delay < 500/*ms*/; delay++)
+			{
+				if (memcmp(decode_map, old_frame, 0x800) != 0)
+					break;
+				usleep(100);
+			}
+		}
+		//gettimeofday(&start_tv, NULL);
+		memcpy(temp,decode_map,4*1024*1024);
+		//gettimeofday(&stop_tv, NULL);
+		decode_surface = temp;
+
+		//now we have 16,6ms(60hz) to 50ms(20hz) to get the whole picture
+		for(even = 0; even < 2; even++)
+		{
+			offset        = layer_offset + (even  << 8 /* * 0x100*/);
+			OUTITERoffset = even * xblock << 8 /* * 256=16x16px*/;
+
+			for (iyblock = even; iyblock < yblock; iyblock+=2)
+			{
+				for (ixblock = 0; ixblock < xblock; ixblock++)
+				{
+					int line;
+
+					OUTITER = OUTITERoffset;
+					for (line = 0; line < 16; line++)
+					{
+						OUT_LU_16(offset, line);
+						OUTITER += (stride - 16 /*we have already incremented by 16*/);
+					}
+
+					//0x00, 0x200, ...
+					offset += 0x200;
+					OUTITERoffset += 16;
+				}
+				OUTITERoffset += (stride << 5) - stride /* * 31*/;
+			}
+		}
+
+		//chroma
+		layer_offset = ((stride*res + (yblockoffset >> 1 /* /2*/ /*round up*/)) / yblockoffset) * yblockoffset;
+
+		//cb
+		//we do not have to round that every chroma y res will be a multiple of 16
+		//and every chroma x res /2 will be a multiple of 8
+		yblock = res >> 4 /* /16*/; //45
+		xblock = stride_half >> 3 /* /8*/; //no roundin
+
+		//if xblock is not even than we will have to move to the next even value an
+		yblockoffset = (((xblock + 1) >> 1 /* / 2*/) << 1 /* * 2*/ ) << 8 /* * 64=8x8px * 2=2 block rows * 2=cr cb*/;
+
+		//printf("yblock: %u xblock:%u yblockoffset:0x%x\n", yblock, xblock, yblockoffset);
+
+		OUTITER       = 0;
+		OUTITERoffset = 0;
+		OUTINC        = 2;
+		out           = chroma;
+
+		for(cr = 0; cr < 2; cr++)
+		{
+			for(even = 0; even < 2; even++)
+			{
+				offset        = layer_offset + (even  << 8 /* * 0x100*/);
+				OUTITERoffset = even * (xblock << 7 /* * 128=8x8px * 2*/) + cr;
+
+				for (iyblock = even; iyblock < yblock; iyblock+=2)
+				{
+					for (ixblock = 0; ixblock < xblock; ixblock++)
+					{
+						int line;
+						OUTITER = OUTITERoffset;
+
+						for (line = 0; line < 8; line++)
+						{
+							OUT_CH_8(offset, line, !cr);
+							OUTITER += (stride - 16 /*we have already incremented by OUTINC*8=16*/);
+						}
+
+						//0x00 0x80 0x200 0x280, ...
+						offset += (offset%0x100?0x180/*80->200*/:0x80/*0->80*/);
+						OUTITERoffset += 16/*OUTINC*8=16*/;
+					}
+					OUTITERoffset += (stride << 4) - stride /* * 15*/;
+				}
+			}
+		}
+		timeval_subtract(&result_tv,&stop_tv,&start_tv);
+		printf("framesync after:     %dms\n", delay);
+		printf("frame copy duration: %fms\n", (((float)result_tv.tv_sec)*1000.0f+((float)result_tv.tv_usec)/1000.0f));
+
+		munmap(decode_map, bpa_data.mem_size);
+
+		ioctlres = ioctl(fd_bpa, BPAMEMIO_UNMAPMEM); // request memory from bpamem
+		if(ioctlres)
+		{
+			fprintf(stderr, "cannot unmap required mem\n");
+			close(fd_bpa);
+			return;
+		}
+
+		close(fd_bpa);
+	}
 	else if (stb_type == XILLEON)
 	{
 		// grab xilleon pic from decoder memory
