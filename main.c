@@ -34,14 +34,19 @@ Feel free to use the code for your own projects. See LICENSE file for details.
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
-#include <sys/time.h>
 #include <sys/mman.h>
 #include <linux/types.h>
 #include <linux/fb.h>
+
+#if defined(__sh__)
+#include <sys/time.h>
 #include <bpamem.h>
+#endif
 
 #include "png.h"
 #include "jpeglib.h"
+
+#if defined(__sh__)
 
 #define OUT(x) \
 	out[OUTITER]=(unsigned char)*(decode_surface + x)&0xFF; \
@@ -78,6 +83,8 @@ Feel free to use the code for your own projects. See LICENSE file for details.
 #define OUT_CH_8(x,l,b) \
 	OUT_CH_8A(x + (l/4) * 0x10 + (l%2) * 0x40 + ((l/2)%2?0x00:0x08) + (b?0x04:0x00));
 
+#endif
+
 #define CLAMP(x)    ((x < 0) ? 0 : ((x > 255) ? 255 : x))
 #define SWAP(x,y)	{ x ^= y; y ^= x; x ^= y; }
 
@@ -90,6 +97,7 @@ Feel free to use the code for your own projects. See LICENSE file for details.
 #define CRFB(x)   ((((x) >> (2)) & 0xf) << 4)
 #define BFFB(x)   ((((x) >> (0)) & 0x3) << 6)
 
+#if defined(__sh__)
 int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y)
 {
 	/* Perform the carry for the later subtraction by updating y. */
@@ -112,6 +120,7 @@ int timeval_subtract (struct timeval *result, struct timeval *x, struct timeval 
 	/* Return 1 if result is negative. */
 	return x->tv_sec < y->tv_sec;
 }
+#endif
 
 #define VIDEO_DEV "/dev/video"
 
@@ -143,7 +152,11 @@ void fast_resize(const unsigned char *source, unsigned char *dest, int xsource, 
 void (*resize)(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
 void combine(unsigned char *output, const unsigned char *video, const unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
+#if !defined(__sh__)
+static enum {UNKNOWN, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7356, BRCM7424, BRCM7425} stb_type = UNKNOWN;
+#else
 static enum {UNKNOWN, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7356, BRCM7424, BRCM7425} stb_type = UNKNOWN;
+#endif
 
 static int chr_luma_stride = 0x40;
 static int chr_luma_register_offset = 0;
@@ -188,7 +201,9 @@ int main(int argc, char **argv)
 		if (strcasestr(buf,"XILLEON")) stb_type=XILLEON;
 		if (strcasestr(buf,"EM863x")) stb_type=AZBOX863x;
 		if (strcasestr(buf,"EM865x")) stb_type=AZBOX865x;		
+#if defined(__sh__)
 		if (strcasestr(buf,"STi") || strcasestr(buf,"STx")) stb_type=ST;
+#endif
 	}
 	fclose(fp);
 
@@ -1094,6 +1109,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 	   	free(infos);		
 		close(fd);
 	}	
+#if defined(__sh__)
 	else if (stb_type == ST)
 	{
 		int yblock, xblock, iyblock, ixblock, yblockoffset, offset, layer_offset, OUTITER, OUTINC, OUTITERoffset;
@@ -1344,6 +1360,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 
 		close(fd_bpa);
 	}
+#endif
 	else if (stb_type == XILLEON)
 	{
 		// grab xilleon pic from decoder memory
