@@ -1223,7 +1223,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		char *decode_map = (char *)mmap(0, bpa_data.mem_size, PROT_WRITE|PROT_READ, MAP_SHARED, fd_bpa, 0);
 		if(decode_map == MAP_FAILED)
 		{
-			fprintf(stderr, "could not map bpa mem");
+			fprintf(stderr, "could not map bpa mem\n");
 			close(fd_bpa);
 			return;
 		}
