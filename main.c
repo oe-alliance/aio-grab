@@ -486,6 +486,9 @@ int main(int argc, char **argv)
 		getvideo(video,&xres_v,&yres_v);
 	}
 
+	// In sh4 boxes, if xres and yres are zero, output is off. So grab only osd (without unnecessary video resizing) by forcing the osd_only variable
+	if (xres_v == 0 && yres_v == 0) osd_only = 1;
+
 	// get aspect ratio
 	if (stb_type == VULCAN || stb_type == PALLAS)
 	{
@@ -1132,15 +1135,13 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			fprintf(stderr, "HDMI output proc read: %s", buf);
 			if (strncmp(buf,"off",sizeof(buf)) == 0) {
 				fprintf(stderr, "HDMI output off. Not grabbing video...\n");
+				*xres=0;
+				*yres=0;
 				return;
 			}
 			else {
 				fprintf(stderr, "HDMI on, continuing");
 		}
-
-		// Initialize output variables
-		//*xres=0;
-		//*yres=0;
 
 		fp = fopen("/proc/stb/vmpeg/0/xres","r");
 		if (fp)
