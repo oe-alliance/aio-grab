@@ -1129,10 +1129,13 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		{
 			fgets(buf,sizeof(buf),fp);
 			fclose(fp);
+			fprintf(stderr, "HDMI output proc read: %s", buf);
 			if (strncmp(buf,"off",sizeof(buf)) == 0) {
 				fprintf(stderr, "HDMI output off. Not grabbing video...\n");
 				return;
 			}
+			else {
+				fprintf(stderr, "HDMI on, continuing");
 		}
 
 		// Initialize output variables
