@@ -1123,9 +1123,21 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		char *decode_surface;
 		int delay;
 
+		// It is necessary to check is hdmi is on, otherwise bpamem is not accessible
+		fp = fopen("/proc/stb/hdmi/output","r");
+		if (fp)
+		{
+			fgets(buf,sizeof(buf),fp);
+			fclose(fp);
+			if (strncmp(buf,"off",sizeof(buf)) == 0) {
+				fprintf(stderr, "HDMI output off. Not grabbing video...\n");
+				return;
+			}
+		}
+
 		// Initialize output variables
-		*xres=0;
-		*yres=0;
+		//*xres=0;
+		//*yres=0;
 
 		fp = fopen("/proc/stb/vmpeg/0/xres","r");
 		if (fp)
