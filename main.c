@@ -474,6 +474,23 @@ int main(int argc, char **argv)
 
 	output = (unsigned char *)malloc(mallocsize*4);
 
+#if defined(__sh__)
+	// For sh4 boxes, check if HDMI is on. Otherwise, do not grab video
+	if (stb_type == ST)
+	{
+		fp = fopen("/proc/stb/hdmi/output","r");
+		if (fp)
+		{
+			fgets(buf,sizeof(buf),fp);
+			fclose(fp);
+			if (strncmp(buf,"off",3) == 0) {
+				fprintf(stderr, "HDMI output off. Not grabbing video.\n");
+				osd_only = 1;
+			}
+		}
+	}
+#endif
+
 	// get osd
 	if (!video_only)
 		getosd(osd,&xres_o,&yres_o);
@@ -485,9 +502,6 @@ int main(int argc, char **argv)
 			fprintf(stderr, "Grabbing Video ...\n");
 		getvideo(video,&xres_v,&yres_v);
 	}
-
-	// In sh4 boxes, if xres and yres are zero, output is off. So grab only osd (without unnecessary video resizing) by forcing the osd_only variable
-	if (xres_v == 0 && yres_v == 0) osd_only = 1;
 
 	// get aspect ratio
 	if (stb_type == VULCAN || stb_type == PALLAS)
@@ -1125,23 +1139,6 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		char bpa_mem_device[30];
 		char *decode_surface;
 		int delay;
-
-		// It is necessary to check is hdmi is on, otherwise bpamem is not accessible
-		fp = fopen("/proc/stb/hdmi/output","r");
-		if (fp)
-		{
-			fgets(buf,sizeof(buf),fp);
-			fclose(fp);
-			fprintf(stderr, "HDMI output proc read: %s", buf);
-			if (strncmp(buf,"off",sizeof(buf)) == 0) {
-				fprintf(stderr, "HDMI output off. Not grabbing video...\n");
-				*xres=0;
-				*yres=0;
-				return;
-			}
-			else {
-				fprintf(stderr, "HDMI on, continuing");
-		}
 
 		fp = fopen("/proc/stb/vmpeg/0/xres","r");
 		if (fp)
