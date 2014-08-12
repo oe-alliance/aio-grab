@@ -474,23 +474,6 @@ int main(int argc, char **argv)
 
 	output = (unsigned char *)malloc(mallocsize*4);
 
-#if defined(__sh__)
-	// For sh4 boxes, check if HDMI is on. Otherwise, do not grab video
-	if (stb_type == ST)
-	{
-		fp = fopen("/proc/stb/hdmi/output","r");
-		if (fp)
-		{
-			fgets(buf,sizeof(buf),fp);
-			fclose(fp);
-			if (strncmp(buf,"off",3) == 0) {
-				fprintf(stderr, "HDMI output off. Not grabbing video.\n");
-				osd_only = 1;
-			}
-		}
-	}
-#endif
-
 	// get osd
 	if (!video_only)
 		getosd(osd,&xres_o,&yres_o);
@@ -1159,32 +1142,12 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			fclose(fp);
 		}
 
-		//if stride and res is zero than this is most probably a stillpicture
-		if(stride == 0) stride = 1280;
-		if(res == 0) res = 720;
-
-		stride_half = stride / 2;
-
-		luma   = (unsigned char *)malloc(stride * res);
-		chroma = (unsigned char *)malloc(stride * res / 2);
-		char *temp = (unsigned char *)malloc(4 * 1024 * 1024);
-		if( NULL == temp )  {
-			printf("can not allocate memory\n");
-			return;
-		}
-
-		memset(chroma, 0x80, stride * res / 2);
-		memset(luma, 0x00, stride * res); /* just to invalidate the page */
-		memset(temp, 0x00, 4 * 1024 * 1024); /* just to invalidate the page */
-
 		fd_bpa = open("/dev/bpamem0", O_RDWR);
-
 		if(fd_bpa < 0)
 		{
 			fprintf(stderr, "cannot access /dev/bpamem0! err = %d\n", fd_bpa);
 			return;
 		}
-
 		bpa_data.bpa_part  = "LMI_VID";
 		bpa_data.phys_addr = 0x00000000;
 		bpa_data.mem_size = 0;
@@ -1246,6 +1209,25 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		}
 
 		fprintf(stderr, "decode surface size:  %d\n", bpa_data.mem_size );
+
+		//if stride and res is zero than this is most probably a stillpicture
+		if(stride == 0) stride = 1280;
+		if(res == 0) res = 720;
+
+		stride_half = stride / 2;
+
+		luma   = (unsigned char *)malloc(stride * res);
+		chroma = (unsigned char *)malloc(stride * res / 2);
+		char *temp = (unsigned char *)malloc(4 * 1024 * 1024);
+		if( NULL == temp )  {
+			printf("can not allocate memory\n");
+			return;
+		}
+
+		memset(chroma, 0x80, stride * res / 2);
+		memset(luma, 0x00, stride * res); /* just to invalidate the page */
+		memset(temp, 0x00, 4 * 1024 * 1024); /* just to invalidate the page */
+
 		//luma
 		layer_offset = 0;
 
