@@ -1123,6 +1123,10 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		char *decode_surface;
 		int delay;
 
+		// Init output variables
+		*xres=0;
+		*yres=0;
+		
 		fp = fopen("/proc/stb/vmpeg/0/xres","r");
 		if (fp)
 		{
