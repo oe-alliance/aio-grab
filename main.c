@@ -308,6 +308,11 @@ int main(int argc, char **argv)
 					stb_type = BRCM7405;
 					break;
 				}
+				else if (strcasestr(buf,"DM7080"))
+				{
+					stb_type = BRCM7435;
+					break;
+				}
 				else if (strcasestr(buf,"DM8000"))
 				{
 					stb_type = BRCM7400;
