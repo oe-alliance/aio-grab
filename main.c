@@ -1162,6 +1162,10 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			fclose(fp);
 		}
 
+		//if stride and res are zero return (please note that stillpictures will not be captured)
+		if((stride == 0)&&(res == 0)) return;
+
+
 		fd_bpa = open("/dev/bpamem0", O_RDWR);
 		if(fd_bpa < 0)
 		{
@@ -1231,8 +1235,8 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		fprintf(stderr, "decode surface size:  %d\n", bpa_data.mem_size );
 
 		//if stride and res is zero than this is most probably a stillpicture
-		if(stride == 0) stride = 1280;
-		if(res == 0) res = 720;
+		//if(stride == 0) stride = 1280;
+		//if(res == 0) res = 720;
 
 		stride_half = stride / 2;
 
