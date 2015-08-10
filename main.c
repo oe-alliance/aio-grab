@@ -153,9 +153,9 @@ void (*resize)(const unsigned char *source, unsigned char *dest, int xsource, in
 void combine(unsigned char *output, const unsigned char *video, const unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
 #if !defined(__sh__)
-static enum {UNKNOWN, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552} stb_type = UNKNOWN;
+static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552} stb_type = UNKNOWN;
 #else
-static enum {UNKNOWN, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552} stb_type = UNKNOWN;
+static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552} stb_type = UNKNOWN;
 #endif
 
 static int chr_luma_stride = 0x40;
@@ -293,6 +293,11 @@ int main(int argc, char **argv)
 				else if (strstr(buf,"7552"))
 				{
 					stb_type = BRCM7552;
+					break;
+				}
+				else if (strstr(buf,"Meson-6"))
+				{
+					stb_type = WETEKPLAY;
 					break;
 				}
 			}
@@ -1024,6 +1029,60 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			SWAP(p[1], p[2]);
 		}
 	}
+	else if (stb_type == WETEKPLAY)
+	{
+#define AMVIDEOCAP_IOC_MAGIC  'V'
+#define AMVIDEOCAP_IOW_SET_START_CAPTURE _IOW(AMVIDEOCAP_IOC_MAGIC, 0x32, int)
+
+		int fd;
+		int ret;
+		char *mbuf;
+
+		// Init output variables
+		*xres=0;
+		*yres=0;
+		
+		fp = fopen("/proc/stb/vmpeg/0/xres","r");
+		if (fp)
+		{
+			while (fgets(buf,sizeof(buf),fp))
+			{
+				sscanf(buf,"%x",&stride);
+			}
+			fclose(fp);
+		}
+		
+		fp = fopen("/proc/stb/vmpeg/0/yres","r");
+		if (fp)
+		{
+			while (fgets(buf,sizeof(buf),fp))
+			{
+				sscanf(buf,"%x",&res);
+			}
+			fclose(fp);
+		}
+		
+		if((stride == 0) || (res == 0)) return;
+		
+		fd = open("/dev/amvideocap0", O_RDWR);
+		if (fd < 0)
+			return;
+			
+		ioctl(fd, AMVIDEOCAP_IOW_SET_START_CAPTURE, 10000);
+		mbuf = mmap(NULL, stride * res * 3, PROT_READ, MAP_SHARED, fd, 0);
+		if(!mbuf) {
+			close(fd);
+			fprintf(stderr, "Mainmemory: <Memmapping failed>\n");
+			return;
+		}
+		memcpy(video, mbuf, stride * res * 3);
+		munmap(mbuf, stride * res * 3);
+		close(fd);
+		*xres=stride;
+		*yres=res;
+		return;
+		
+	}
 	else if (stb_type == AZBOX863x || stb_type == AZBOX865x) 
 	{
 	
@@ -1668,10 +1727,10 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 	struct fb_fix_screeninfo fix_screeninfo;
 	struct fb_var_screeninfo var_screeninfo;
 
-	fb=open("/dev/fb/0", O_RDWR);
+	fb=open(stb_type == WETEKPLAY ? "/dev/fb/2" : "/dev/fb/0", O_RDWR);
 	if (fb == -1)
 	{
-		fb=open("/dev/fb0", O_RDWR);
+		fb=open(stb_type == WETEKPLAY ? "/dev/fb2" : "/dev/fb0", O_RDWR);
 		if (fb == -1)
 		{
 			fprintf(stderr, "Framebuffer failed\n");
