@@ -318,7 +318,7 @@ int main(int argc, char **argv)
 					stb_type = BRCM7405;
 					break;
 				}
-				else if (strcasestr(buf,"DM7080"))
+				else if (strcasestr(buf,"DM7080") || (strcasestr(buf,"DM820"))
 				{
 					stb_type = BRCM7435;
 					break;
@@ -1020,7 +1020,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			SWAP(p[1], p[2]);
 		}
 		count = (stride*ofs2) >> 2;
-		#pragma omp parallel for 
+		#pragma omp parallel for
 		for (t = 0; t < count; ++t)
 		{
 			unsigned char* p = chroma + (4 * t);
@@ -1041,7 +1041,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		// Init output variables
 		*xres=0;
 		*yres=0;
-		
+
 		fp = fopen("/proc/stb/vmpeg/0/xres","r");
 		if (fp)
 		{
@@ -1051,7 +1051,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			}
 			fclose(fp);
 		}
-		
+
 		fp = fopen("/proc/stb/vmpeg/0/yres","r");
 		if (fp)
 		{
@@ -1061,13 +1061,13 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			}
 			fclose(fp);
 		}
-		
+
 		if((stride == 0) || (res == 0)) return;
-		
+
 		fd = open("/dev/amvideocap0", O_RDWR);
 		if (fd < 0)
 			return;
-			
+
 		ioctl(fd, AMVIDEOCAP_IOW_SET_START_CAPTURE, 10000);
 		mbuf = mmap(NULL, stride * res * 3, PROT_READ, MAP_SHARED, fd, 0);
 		if(!mbuf) {
@@ -1081,11 +1081,11 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		*xres=stride;
 		*yres=res;
 		return;
-		
+
 	}
-	else if (stb_type == AZBOX863x || stb_type == AZBOX865x) 
+	else if (stb_type == AZBOX863x || stb_type == AZBOX865x)
 	{
-	
+
 	  unsigned char *infos = 0 ,*lyuv = 0, *ptr;
 	  int fd, len = 0, x, y;
 	  unsigned int	chroma_w, chroma_h;
@@ -1097,12 +1097,12 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 
 	   fd = open("/dev/frameyuv",O_RDWR);
 	   if(!fd) {
-		perror("/dev/frameyuv");		
-		return; 
+		perror("/dev/frameyuv");
+		return;
 	   }
 
-	   infos = malloc(1920*1080*4);	 
-	   len = read(fd,infos,1920*1080*4); 
+	   infos = malloc(1920*1080*4);
+	   len = read(fd,infos,1920*1080*4);
 
 	   if(len <= 0 ) {
 		 fprintf(stderr,"No picture info %d\n",len);
@@ -1110,37 +1110,37 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		 close(fd);
 		 return;
 	    }
-		
-	    luma_w = (infos[0]<<24) | (infos[1]<<16) | (infos[2]<<8) | (infos[3]);  
-	    luma_h = (infos[4]<<24) | (infos[5]<<16) | (infos[6]<<8) | (infos[7]);  
-	    luma_width = (infos[8]<<24) | (infos[9]<<16) | (infos[10]<<8) | (infos[11]);  
-	    chroma_w = (infos[12]<<24) | (infos[13]<<16) | (infos[14]<<8) | (infos[15]);  
-	    chroma_h = (infos[16]<<24) | (infos[17]<<16) | (infos[18]<<8) | (infos[19]);  
-	    chroma_width = (infos[20]<<24) | (infos[21]<<16) | (infos[22]<<8) | (infos[23]);  
+
+	    luma_w = (infos[0]<<24) | (infos[1]<<16) | (infos[2]<<8) | (infos[3]);
+	    luma_h = (infos[4]<<24) | (infos[5]<<16) | (infos[6]<<8) | (infos[7]);
+	    luma_width = (infos[8]<<24) | (infos[9]<<16) | (infos[10]<<8) | (infos[11]);
+	    chroma_w = (infos[12]<<24) | (infos[13]<<16) | (infos[14]<<8) | (infos[15]);
+	    chroma_h = (infos[16]<<24) | (infos[17]<<16) | (infos[18]<<8) | (infos[19]);
+	    chroma_width = (infos[20]<<24) | (infos[21]<<16) | (infos[22]<<8) | (infos[23]);
 
 	    if (stb_type == AZBOX863x) {
 
 		luma_size_tile	= (((luma_w + 127)/128)*128) *  (((luma_h + 31)/32)*32);
 
-		chroma_size_tile	= (((chroma_w + 127)/128)*128) * (((chroma_h + 31)/32)*32); 
+		chroma_size_tile	= (((chroma_w + 127)/128)*128) * (((chroma_h + 31)/32)*32);
 	     } else {
 
 		luma_size_tile	= (((luma_w + 255)/256)*256) *  (((luma_h + 31)/32)*32);
 
-		chroma_size_tile	= (((chroma_w + 255)/256)*256) * (((chroma_h + 31)/32)*32); 
+		chroma_size_tile	= (((chroma_w + 255)/256)*256) * (((chroma_h + 31)/32)*32);
 	     }
-		
+
 	     pluma = infos + 24;
 	     pchroma = infos + 24 +luma_size_tile;
-		
-	     luma = (unsigned char *)malloc(luma_w * luma_h); 	 
-	     chroma = (unsigned char *)malloc(chroma_w * chroma_h * 2); 	  
-		
+
+	     luma = (unsigned char *)malloc(luma_w * luma_h);
+	     chroma = (unsigned char *)malloc(chroma_w * chroma_h * 2);
+
 	     stride = luma_w;
 	     res = luma_h;
-		 		 
+
 	     ptr = luma;
-	     if (stb_type == AZBOX863x) { 
+	     if (stb_type == AZBOX863x) {
 		 /* save the luma buffer Y */
 		for (y = 0 ; y < luma_h ; y++) {
 	    	  for (x = 0 ; x < luma_w ; x++) {
@@ -1187,14 +1187,14 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 				 (x % 256) + (y % 32)*256);
 
 		 *ptr++ = *pixel;
-		 }	
+		 }
 
 
-	      }		
+	      }
 	     }
-	   	free(infos);		
+	   	free(infos);
 		close(fd);
-	}	
+	}
 #if defined(__sh__)
 	else if (stb_type == ST)
 	{
@@ -1212,7 +1212,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		// Init output variables
 		*xres=0;
 		*yres=0;
-		
+
 		fp = fopen("/proc/stb/vmpeg/0/xres","r");
 		if (fp)
 		{
@@ -1338,7 +1338,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		OUTITERoffset = 0;
 		OUTINC        = 1; /*no spaces between pixel*/
 		out           = luma;
- 
+
 		struct timeval start_tv;
 		struct timeval stop_tv;
 		struct timeval result_tv;
