@@ -146,6 +146,7 @@ static const int yuv2rgbtable_bv[256] = {
 };
 
 void getvideo(unsigned char *video, int *xres, int *yres);
+void getvideo2(unsigned char *video, int *xres, int *yres);
 void getosd(unsigned char *osd, int *xres, int *yres);
 void smooth_resize(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
 void fast_resize(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
@@ -153,9 +154,9 @@ void (*resize)(const unsigned char *source, unsigned char *dest, int xsource, in
 void combine(unsigned char *output, const unsigned char *video, const unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
 #if !defined(__sh__)
-static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552} stb_type = UNKNOWN;
+static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552, BRCM7366} stb_type = UNKNOWN;
 #else
-static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552} stb_type = UNKNOWN;
+static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552, BRCM7366} stb_type = UNKNOWN;
 #endif
 
 static int chr_luma_stride = 0x40;
@@ -295,6 +296,16 @@ int main(int argc, char **argv)
 					stb_type = BRCM7552;
 					break;
 				}
+				else if (strstr(buf,"7366"))
+				{
+					stb_type = BRCM7366;
+					break;
+				}
+				else if (strstr(buf,"7376"))
+				{
+					stb_type = BRCM7366;
+					break;
+				}
 				else if (strstr(buf,"Meson-6"))
 				{
 					stb_type = WETEKPLAY;
@@ -410,6 +421,12 @@ int main(int argc, char **argv)
 			chr_luma_register_offset = 0x34;
 			mem2memdma_register = 0;
 			break;
+		case BRCM7366:
+			registeroffset = 0x10600000;
+			chr_luma_stride = 0x40;
+			chr_luma_register_offset = 0x34;
+			mem2memdma_register = 0;
+			break;
 		default:
 			break;
 	}
@@ -515,7 +532,14 @@ int main(int argc, char **argv)
 	{
 		if (!quiet)
 			fprintf(stderr, "Grabbing Video ...\n");
+		if (stb_type == BRCM7366)
+		{
+			getvideo2(video, &xres_v,&yres_v);
+		}
+		else
+		{
 		getvideo(video,&xres_v,&yres_v);
+		}
 	}
 
 	// get aspect ratio
@@ -836,6 +860,20 @@ int main(int argc, char **argv)
 }
 
 // grabing the video picture
+
+void getvideo2(unsigned char *video, int *xres, int *yres)
+{
+	int fd_video = open("/dev/dvb/adapter0/video0", O_RDONLY);
+	if (fd_video < 0) {
+		perror("/dev/dvb/adapter0/video0");
+		return;
+	}
+	ssize_t r = read(fd_video, video, 1920 * 1080 * 3);
+	close(fd_video);
+	*xres = 1920;
+	*yres = 1080;
+	return;
+}
 
 void getvideo(unsigned char *video, int *xres, int *yres)
 {
