@@ -154,9 +154,9 @@ void (*resize)(const unsigned char *source, unsigned char *dest, int xsource, in
 void combine(unsigned char *output, const unsigned char *video, const unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
 #if !defined(__sh__)
-static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552, BRCM7366} stb_type = UNKNOWN;
+static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552, BRCM7366, BRCM73625, BRCM73565} stb_type = UNKNOWN;
 #else
-static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552, BRCM7366} stb_type = UNKNOWN;
+static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552, BRCM7366, BRCM73625, BRCM73565} stb_type = UNKNOWN;
 #endif
 
 static int chr_luma_stride = 0x40;
@@ -266,6 +266,11 @@ int main(int argc, char **argv)
 					stb_type = BRCM7362;
 					break;
 				}
+				else if (strstr(buf,"73625"))
+				{
+					stb_type = BRCM73625;
+					break;
+				}
 				else if (strstr(buf,"7241"))
 				{
 					stb_type = BRCM7241;
@@ -274,6 +279,11 @@ int main(int argc, char **argv)
 				else if (strstr(buf,"7356"))
 				{
 					stb_type = BRCM7356;
+					break;
+				}
+				else if (strstr(buf,"73565"))
+				{
+					stb_type = BRCM73565;
 					break;
 				}
 				else if (strstr(buf,"7424"))
@@ -394,6 +404,7 @@ int main(int argc, char **argv)
 			mem2memdma_register = 0;
 			break;
 		case BRCM7362:
+		case BRCM73625:
 			registeroffset = 0x10600000;
 			chr_luma_stride = 0x40;
 			chr_luma_register_offset = 0x34;
@@ -402,6 +413,7 @@ int main(int argc, char **argv)
 		case BRCM7241:
 		case BRCM7346:
 		case BRCM7356:
+		case BRCM73565:
 		case BRCM7424:
 		case BRCM7425:
 			registeroffset = 0x10600000;
