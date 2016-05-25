@@ -895,11 +895,21 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		int adr, adr2, ofs, ofs2, offset, pageoffset;
 		int xtmp,xsub,ytmp,t2,dat1;
 
-		ofs = data[chr_luma_register_offset + 8] << 4; /* luma lines */
-		ofs2 = data[chr_luma_register_offset + 12] << 4; /* chroma lines */
-		adr2 = data[chr_luma_register_offset + 3] << 24 | data[chr_luma_register_offset + 2] << 16 | data[chr_luma_register_offset + 1] << 8;
-		stride = data[0x15] << 8 | data[0x14];
-		adr = data[0x1f] << 24 | data[0x1e] << 16 | data[0x1d] << 8; /* start of videomem */
+		if (stb_type == BRCM73565 || stb_type == BRCM73625) {
+			chr_luma_register_offset = 0x3c;
+
+			ofs = data[chr_luma_register_offset + 24] << 4; /* luma lines */
+			ofs2 = data[chr_luma_register_offset + 28] << 4; /* chroma lines */
+			adr2 = data[chr_luma_register_offset + 3] << 24 | data[chr_luma_register_offset + 2] << 16 | data[chr_luma_register_offset + 1] << 8;
+			stride = data[0x19] << 8 | data[0x18];
+			adr = data[0x37] << 24 | data[0x36] << 16 | data[0x35] << 8; /* start of videomem */
+		} else {
+			ofs = data[chr_luma_register_offset + 8] << 4; /* luma lines */
+			ofs2 = data[chr_luma_register_offset + 12] << 4; /* chroma lines */
+			adr2 = data[chr_luma_register_offset + 3] << 24 | data[chr_luma_register_offset + 2] << 16 | data[chr_luma_register_offset + 1] << 8;
+			stride = data[0x15] << 8 | data[0x14];
+			adr = data[0x1f] << 24 | data[0x1e] << 16 | data[0x1d] << 8; /* start of videomem */
+		}
 		offset = adr2 - adr;
 		pageoffset = adr & 0xfff;
 		adr -= pageoffset;
