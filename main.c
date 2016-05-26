@@ -261,14 +261,14 @@ int main(int argc, char **argv)
 					stb_type = BRCM7358;
 					break;
 				}
-				else if (strstr(buf,"7362"))
-				{
-					stb_type = BRCM7362;
-					break;
-				}
 				else if (strstr(buf,"73625"))
 				{
 					stb_type = BRCM73625;
+					break;
+				}
+				else if (strstr(buf,"7362"))
+				{
+					stb_type = BRCM7362;
 					break;
 				}
 				else if (strstr(buf,"7241"))
@@ -276,14 +276,14 @@ int main(int argc, char **argv)
 					stb_type = BRCM7241;
 					break;
 				}
-				else if (strstr(buf,"7356"))
-				{
-					stb_type = BRCM7356;
-					break;
-				}
 				else if (strstr(buf,"73565"))
 				{
 					stb_type = BRCM73565;
+					break;
+				}
+				else if (strstr(buf,"7356"))
+				{
+					stb_type = BRCM7356;
 					break;
 				}
 				else if (strstr(buf,"7424"))
