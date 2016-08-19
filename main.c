@@ -154,9 +154,9 @@ void (*resize)(const unsigned char *source, unsigned char *dest, int xsource, in
 void combine(unsigned char *output, const unsigned char *video, const unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
 #if !defined(__sh__)
-static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7252, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552, BRCM7366, BRCM73625, BRCM73565} stb_type = UNKNOWN;
+static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7251, BRCM7252, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552, BRCM7366, BRCM73625, BRCM73565} stb_type = UNKNOWN;
 #else
-static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7252, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552, BRCM7366, BRCM73625, BRCM73565} stb_type = UNKNOWN;
+static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7251, BRCM7252, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552, BRCM7366, BRCM73625, BRCM73565} stb_type = UNKNOWN;
 #endif
 
 static int chr_luma_stride = 0x40;
@@ -274,6 +274,11 @@ int main(int argc, char **argv)
 				else if (strstr(buf,"7241"))
 				{
 					stb_type = BRCM7241;
+					break;
+				}
+				else if (strstr(buf,"7251"))
+				{
+					stb_type = BRCM7251;
 					break;
 				}
 				else if (strstr(buf,"7252"))
@@ -407,6 +412,7 @@ int main(int argc, char **argv)
 		case BRCM73625:
 		case BRCM7366:
 		case BRCM7552:
+		case BRCM7251:
 		case BRCM7252:
 			registeroffset = 0x10600000;
 			chr_luma_stride = 0x40;
@@ -530,7 +536,7 @@ int main(int argc, char **argv)
 	{
 		if (!quiet)
 			fprintf(stderr, "Grabbing Video ...\n");
-		if (stb_type == BRCM7366 || stb_type == BRCM7252)
+		if (stb_type == BRCM7366 || stb_type == BRCM7251 || stb_type == BRCM7252)
 		{
 			getvideo2(video, &xres_v,&yres_v);
 		}
