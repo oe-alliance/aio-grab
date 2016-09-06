@@ -154,9 +154,9 @@ void (*resize)(const unsigned char *source, unsigned char *dest, int xsource, in
 void combine(unsigned char *output, const unsigned char *video, const unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
 #if !defined(__sh__)
-static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7251, BRCM7252, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552, BRCM7366, BRCM73625, BRCM73565} stb_type = UNKNOWN;
+static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7251, BRCM7252, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552, BRCM7581, BRCM7583, BRCM7584, BRCM7366, BRCM73625, BRCM73565} stb_type = UNKNOWN;
 #else
-static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7251, BRCM7252, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552, BRCM7366, BRCM73625, BRCM73565} stb_type = UNKNOWN;
+static enum {UNKNOWN, WETEKPLAY, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7251, BRCM7252, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7552, BRCM7581, BRCM7583, BRCM7584, BRCM7366, BRCM73625, BRCM73565} stb_type = UNKNOWN;
 #endif
 
 static int chr_luma_stride = 0x40;
@@ -316,6 +316,21 @@ int main(int argc, char **argv)
 					stb_type = BRCM7552;
 					break;
 				}
+				else if (strstr(buf,"7581"))
+				{
+					stb_type = BRCM7581;
+					break;
+				}
+				else if (strstr(buf,"7583"))
+				{
+					stb_type = BRCM7583;
+					break;
+				}
+				else if (strstr(buf,"7584"))
+				{
+					stb_type = BRCM7584;
+					break;
+				}
 				else if (strstr(buf,"7366"))
 				{
 					stb_type = BRCM7366;
@@ -420,6 +435,9 @@ int main(int argc, char **argv)
 			mem2memdma_register = 0;
 			break;
 		case BRCM7241:
+		case BRCM7581:
+		case BRCM7583:
+		case BRCM7584:
 		case BRCM7346:
 		case BRCM7356:
 		case BRCM73565:
