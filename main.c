@@ -369,7 +369,7 @@ int main(int argc, char **argv)
 					stb_type = BRCM7435;
 					break;
 				}
-				else if (strcasestr(buf, "DM520"))
+				else if (strcasestr(buf, "DM520") || strcasestr(buf,"DM525"))
 				{
 					stb_type = BRCM73625;
 					break;
