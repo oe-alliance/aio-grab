@@ -388,6 +388,11 @@ int main(int argc, char **argv)
 				{
 					stb_type = BRCM7401;
 					break;
+				else if (strcasestr(buf,"DM900"))
+				{
+					stb_type = BRCM7252;
+					break;
+				}
 				}
 			}
 			fclose(file);
