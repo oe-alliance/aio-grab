@@ -447,6 +447,7 @@ int main(int argc, char **argv)
 		case BRCM7252:
 		case BRCM7252S:
 		case BRCM7581:
+		case BRCM7584:
 			registeroffset = 0x10600000;
 			chr_luma_stride = 0x40;
 			chr_luma_register_offset = 0x34;
@@ -454,7 +455,6 @@ int main(int argc, char **argv)
 			break;
 		case BRCM7241:
 		case BRCM7583:
-		case BRCM7584:
 		case BRCM7346:
 		case BRCM7356:
 		case BRCM73565:
