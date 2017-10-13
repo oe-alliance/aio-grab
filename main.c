@@ -399,6 +399,11 @@ int main(int argc, char **argv)
 					stb_type = BRCM7439;
 					break;
 				}
+				else if (strcasestr(buf,"DM920"))
+				{
+					stb_type = BRCM7439;
+					break;
+				}
 			}
 			fclose(file);
 		}
