@@ -406,8 +406,8 @@ int main(int argc, char **argv)
 
 	if (stb_type == UNKNOWN)
 	{
-		fprintf(stderr, "unknown stb type\n");
-		return -1;
+		fprintf(stderr, "unknown stb type we can only capture osd\n");
+		osd_only=1;
 	}
 
 	switch (stb_type)
