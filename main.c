@@ -594,7 +594,7 @@ int main(int argc, char **argv)
 	{
 		if (!quiet)
 			fprintf(stderr, "Grabbing Video ...\n");
-		if (stb_type == BRCM7366 || stb_type == BRCM7251 || stb_type == BRCM7252 || stb_type == BRCM7252S || stb_type == BRCM7444)
+		if (stb_type == BRCM7366 || stb_type == BRCM7251 || stb_type == BRCM7252 || stb_type == BRCM7252S || stb_type == BRCM7444 || stb_type == BRCM72604)
 		{
 			getvideo2(video, &xres_v,&yres_v);
 		}
