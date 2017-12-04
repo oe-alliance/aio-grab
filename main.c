@@ -404,12 +404,7 @@ int main(int argc, char **argv)
 					stb_type = BRCM7401;
 					break;
 				}
-				else if (strcasestr(buf,"DM900"))
-				{
-					stb_type = BRCM7439;
-					break;
-				}
-				else if (strcasestr(buf,"DM920"))
+				else if (strcasestr(buf,"DM900")) || (strcasestr(buf,"DM920"))
 				{
 					stb_type = BRCM7439;
 					break;
