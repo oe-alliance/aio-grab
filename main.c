@@ -228,6 +228,24 @@ int main(int argc, char **argv)
 
 	if (stb_type == UNKNOWN)
 	{
+		FILE *file = fopen("/proc/stb/info/boxtype", "r");
+		if (file)
+		{
+			char buf[32];
+			while (fgets(buf, sizeof(buf), file))
+			{
+				if (strcasestr(buf,"osmio4k"))
+				{
+					stb_type = BRCM72604VU;
+					break;
+				}
+			}
+			fclose(file);
+		}
+	}
+
+	if (stb_type == UNKNOWN)
+	{
 		FILE *file = fopen("/proc/stb/info/hwmodel", "r");
 		if (file)
 		{
