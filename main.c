@@ -164,6 +164,7 @@ static int chr_luma_register_offset = 0;
 static unsigned int registeroffset = 0;
 static unsigned int mem2memdma_register = 0;
 static int quiet = 0;
+static int video_dev = 0;
 
 // main program
 
@@ -611,7 +612,7 @@ int main(int argc, char **argv)
 	}
 
 	// process command line
-	while ((c = getopt (argc, argv, "dhj:lbnopqr:sv")) != -1)
+	while ((c = getopt (argc, argv, "dhj:lbnopqr:svi:")) != -1)
 	{
 		switch (c)
 		{
@@ -623,6 +624,7 @@ int main(int argc, char **argv)
 					"-o only grab osd (framebuffer) when using this with png or bmp\n"
 					"   fileformat you will get a 32bit pic with alphachannel\n"
 					"-v only grab video\n"
+					"-i (video device) to grab video (default 0)\n"
 					"-d always use osd resolution (good for skinshots)\n"
 					"-n dont correct 16:9 aspect ratio\n"
 					"-r (size) resize to a fixed width, maximum: 1920\n"
@@ -643,6 +645,9 @@ int main(int argc, char **argv)
 			case 'v': // Video only
 				video_only=1;
 				osd_only=0;
+				break;
+			case 'i': // Video device
+				video_dev=atoi(optarg);
 				break;
 			case 'd': // always use OSD resolution
 				use_osd_res=1;
@@ -1042,9 +1047,11 @@ int main(int argc, char **argv)
 
 void getvideo2(unsigned char *video, int *xres, int *yres)
 {
-	int fd_video = open("/dev/dvb/adapter0/video0", O_RDONLY);
+	char buf[256];
+	sprintf(buf, "/dev/dvb/adapter0/video%d", video_dev);
+	int fd_video = open(buf, O_RDONLY);
 	if (fd_video < 0) {
-		perror("/dev/dvb/adapter0/video0");
+		fprintf(stderr, "could not open %s\n", buf);
 		return;
 	}
 	ssize_t r = read(fd_video, video, 1920 * 1080 * 3);
@@ -1059,20 +1066,20 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 	int mem_fd;
 	//unsigned char *memory;
 	void *memory;
+	unsigned char *luma = NULL;
+	unsigned char *chroma = NULL;
+	unsigned char *memory_tmp = NULL;
+	int t;
+	int res = 0;
+	int stride = 0;
+	FILE *fp;
+	char buf[256];
+
 	if ((mem_fd = open("/dev/mem", O_RDWR|O_SYNC) ) < 0)
 	{
 		fprintf(stderr, "Mainmemory: can't open /dev/mem \n");
 		return;
 	}
-
-	unsigned char *luma, *chroma, *memory_tmp;
-	luma = (unsigned char *)malloc(1); // real malloc will be done later
-	chroma = (unsigned char *)malloc(1); // this is just to be sure it get initialized and free() will not segfaulting
-	memory_tmp = (unsigned char *)malloc(1);
-	int t,stride,res;
-	res = stride = 0;
-	char buf[256];
-	FILE *fp;
 
 	if (stb_type > XILLEON)
 	{
