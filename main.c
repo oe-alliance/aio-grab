@@ -154,9 +154,9 @@ void (*resize)(const unsigned char *source, unsigned char *dest, int xsource, in
 void combine(unsigned char *output, const unsigned char *video, const unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
 #if !defined(__sh__)
-static enum {UNKNOWN, WETEK, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7251, BRCM7252, BRCM7252S, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7444, BRCM7552, BRCM7581, BRCM7583, BRCM7584, BRCM72604VU, BRCM72604, BRCM7278, BRCM75845, BRCM7366, BRCM73625, BRCM73565, BRCM7439DAGS, BRCM7439, HISIL_ARM} stb_type = UNKNOWN;
+static enum {UNKNOWN, DMNEW, WETEK, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7251, BRCM7252, BRCM7252S, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7444, BRCM7552, BRCM7581, BRCM7583, BRCM7584, BRCM72604VU, BRCM72604, BRCM7278, BRCM75845, BRCM7366, BRCM73625, BRCM73565, BRCM7439DAGS, BRCM7439, HISIL_ARM} stb_type = UNKNOWN;
 #else
-static enum {UNKNOWN, WETEK, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7251, BRCM7252, BRCM7252S, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7444, BRCM7552, BRCM7581, BRCM7583, BRCM7584, BRCM72604VU, BRCM72604, BRCM7278, BRCM75845, BRCM7366, BRCM73625, BRCM73565, BRCM7439DAGS, BRCM7439, HISIL_ARM} stb_type = UNKNOWN;
+static enum {UNKNOWN, DMNEW, WETEK, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7251, BRCM7252, BRCM7252S, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7444, BRCM7552, BRCM7581, BRCM7583, BRCM7584, BRCM72604VU, BRCM72604, BRCM7278, BRCM75845, BRCM7366, BRCM73625, BRCM73565, BRCM7439DAGS, BRCM7439, HISIL_ARM} stb_type = UNKNOWN;
 #endif
 
 static int chr_luma_stride = 0x40;
@@ -165,6 +165,58 @@ static unsigned int registeroffset = 0;
 static unsigned int mem2memdma_register = 0;
 static int quiet = 0;
 static int video_dev = 0;
+
+enum videograbber_pixelformat
+{
+	VIDEOGRABBER_FORMAT_RGB888,
+	VIDEOGRABBER_FORMAT_BGR888,
+	VIDEOGRABBER_FORMAT_ABGR8888
+};
+
+struct videograbber_setup_t
+{
+	int out_width;
+	int out_height;
+	int out_stride;
+	int out_format;
+};
+
+struct videograbber_vframe_t {
+	unsigned long canvas_phys_addr[3];
+	int width[3];
+	int stride[3];
+	int height[3];
+};
+
+int zoomWidth(int width, int height, int aspect)
+{
+	int calculatedAspect = 256 * height / width;
+
+	if (aspect == calculatedAspect)
+		return width;
+
+	return 256 * height / aspect;
+}
+
+
+int readIntFromFile(const char *path, int base, int *out)
+{
+	FILE *file = fopen(path, "r");
+	if (!file)
+		return -1;
+
+	if (base == 10)
+		fscanf(file, "%d", out);
+	else if (base == 16)
+		fscanf(file, "%x", out);
+	else
+		return -1;
+
+	fclose(file);
+
+	return 0;
+}
+
 
 // main program
 
@@ -522,6 +574,11 @@ int main(int argc, char **argv)
 				else if (strcasestr(buf,"DM900") || strcasestr(buf,"DM920"))
 				{
 					stb_type = BRCM7439;
+					break;
+				}
+				else if (strcasestr(buf,"ONE") || strcasestr(buf,"TWO"))
+				{
+					stb_type = DMNEW;
 					break;
 				}
 			}
@@ -1500,6 +1557,79 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			SWAP(p[0], p[3]);
 			SWAP(p[1], p[2]);
 		}
+	}
+	else if (stb_type == DMNEW)
+	{
+#define VIDEOGRABBER_IOC_MAGIC			'D'
+#define VIDEOGRABBER_IOC_SETUP			_IOW(VIDEOGRABBER_IOC_MAGIC, 0x00, struct videograbber_setup_t)
+#define VIDEOGRABBER_IOC_GET_FRAME		_IOR(VIDEOGRABBER_IOC_MAGIC, 0x01, struct videograbber_vframe_t)
+	
+
+		// Init output variables
+		*xres=0;
+		*yres=0;
+
+		int width = 1280;
+		int height = 720;
+		// set a fixed aspect ratio of 16:9
+		// calucation: 256 * height / width
+		int aspect = 0x90;
+
+		readIntFromFile("/sys/class/video/frame_width", 10, &width);
+		readIntFromFile("/sys/class/video/frame_height", 10, &height);
+		readIntFromFile("/sys/class/video/frame_aspect_ratio", 16, &aspect);
+
+		width = zoomWidth(width, height, aspect); //adjust aspect of source -> force 
+
+		int ret = -1;
+		int fd = -1;
+
+		fd = open("/dev/videograbber", O_RDWR);
+		if (fd < 0)
+		{
+			fprintf(stderr, "%s: failed to open device (%m)\n");
+			return;
+		}
+
+		struct videograbber_setup_t setup = { 0 };
+		setup.out_width = width;
+		setup.out_height = height;
+		setup.out_stride = width * 3; // bytes per line (you can use your target's stride here if needed)
+		setup.out_format = VIDEOGRABBER_FORMAT_RGB888; // -1 would be VIDEOGRABBER_FORMAT_BGR888
+		if (ioctl(fd, VIDEOGRABBER_IOC_SETUP, &setup) < 0)
+		{
+			fprintf(stderr, "%s: can't setup videograbber (%m)\n");
+			goto dmerr;
+		}
+
+		struct videograbber_vframe_t vf;
+		if (ioctl(fd, VIDEOGRABBER_IOC_GET_FRAME, &vf) != 0)
+		{
+			fprintf(stderr, "%s: can't get current frame (%m)\n");
+			goto dmerr;
+		}
+
+		size_t mapLength = vf.stride[0] * vf.height[0];
+		void *srcAddr = mmap(NULL, mapLength, PROT_READ, MAP_SHARED, fd, vf.canvas_phys_addr[0]);
+		if (srcAddr == MAP_FAILED)
+		{
+			fprintf(stderr, "%s: error while mapping src buffer (%m)\n");
+			goto dmerr;
+		}
+
+		memcpy(video, srcAddr, mapLength);
+
+		munmap(srcAddr, mapLength);
+
+		*xres=vf.width[0];
+		*yres=vf.height[0];
+
+dmerr:
+	if (fd >= 0)
+		close(fd);
+
+	return;
+
 	}
 	else if (stb_type == WETEK)
 	{
