@@ -161,8 +161,8 @@ static enum {UNKNOWN, DMNEW, WETEK, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XI
 
 static int chr_luma_stride = 0x40;
 static int chr_luma_register_offset = 0;
-static unsigned int registeroffset = 0;
-static unsigned int mem2memdma_register = 0;
+static off_t registeroffset = 0;
+static off_t mem2memdma_register = 0;
 static int quiet = 0;
 static int video_dev = 0;
 
@@ -1144,11 +1144,11 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		const unsigned char* data = (unsigned char*)mmap(0, 100, PROT_READ, MAP_SHARED, mem_fd, registeroffset);
 		if(data == MAP_FAILED)
 		{
-			fprintf(stderr, "Mainmemory: <Memmapping failed>\n");
+			fprintf(stderr, "Mainmemory: <Memmapping failed 1>\n");
 			return;
 		}
 
-		int adr, adr2, ofs, ofs2, offset, pageoffset;
+		off_t adr, adr2, ofs, ofs2, offset, pageoffset;
 		int xtmp,xsub,ytmp,t2,dat1;
 
 		if (stb_type == BRCM73565 || stb_type == BRCM73625 || stb_type == BRCM7439DAGS || stb_type == BRCM7439 || stb_type == BRCM75845 || stb_type == BRCM72604) {
@@ -1200,7 +1200,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			memory_tmp_size = offset + (stride + chr_luma_stride) * ofs2;
 			if((memory_tmp = (unsigned char*)mmap(0, memory_tmp_size, PROT_READ, MAP_SHARED, mem_fd, adr)) == MAP_FAILED)
 			{
-				fprintf(stderr, "Mainmemory: <Memmapping failed>\n");
+				fprintf(stderr, "Mainmemory: <Memmapping failed 2>\n");
 				return;
 			}
 
@@ -1220,13 +1220,13 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			memory_tmp_size = DMA_BLOCKSIZE + 0x1000;
 			if ((memory_tmp = (unsigned char*)mmap(0, memory_tmp_size, PROT_READ|PROT_WRITE, MAP_SHARED, mem_fd, SPARE_RAM)) == MAP_FAILED)
 			{
-				fprintf(stderr, "Mainmemory: <Memmapping failed>\n");
+				fprintf(stderr, "Mainmemory: <Memmapping failed 3>\n");
 				return;
 			}
 			volatile unsigned long *mem_dma;
 			if ((mem_dma = (volatile unsigned long*)mmap(0, 0x1000, PROT_READ|PROT_WRITE, MAP_SHARED, mem_fd, mem2memdma_register)) == MAP_FAILED)
 			{
-				fprintf(stderr, "Mainmemory: <Memmapping failed>\n");
+				fprintf(stderr, "Mainmemory: <Memmapping failed 4>\n");
 				return;
 			}
 
@@ -1587,7 +1587,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		fd = open("/dev/videograbber", O_RDWR);
 		if (fd < 0)
 		{
-			fprintf(stderr, "%s: failed to open device (%m)\n");
+			fprintf(stderr, "/dev/videograbber: failed to open device (%m)\n");
 			return;
 		}
 
@@ -1598,22 +1598,22 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		setup.out_format = VIDEOGRABBER_FORMAT_RGB888; // -1 would be VIDEOGRABBER_FORMAT_BGR888
 		if (ioctl(fd, VIDEOGRABBER_IOC_SETUP, &setup) < 0)
 		{
-			fprintf(stderr, "%s: can't setup videograbber (%m)\n");
+			fprintf(stderr, "can't setup videograbber (%m)\n");
 			goto dmerr;
 		}
 
 		struct videograbber_vframe_t vf;
 		if (ioctl(fd, VIDEOGRABBER_IOC_GET_FRAME, &vf) != 0)
 		{
-			fprintf(stderr, "%s: can't get current frame (%m)\n");
+			fprintf(stderr, "videograbber: can't get current frame (%m)\n");
 			goto dmerr;
 		}
 
 		size_t mapLength = vf.stride[0] * vf.height[0];
-		void *srcAddr = mmap(NULL, mapLength, PROT_READ, MAP_SHARED, fd, vf.canvas_phys_addr[0]);
+		void *srcAddr = mmap(NULL, mapLength, PROT_READ, MAP_SHARED, fd, (off_t)vf.canvas_phys_addr[0]);
 		if (srcAddr == MAP_FAILED)
 		{
-			fprintf(stderr, "%s: error while mapping src buffer (%m)\n");
+			fprintf(stderr, "videograbber: error while mapping src buffer (%m)\n");
 			goto dmerr;
 		}
 
@@ -1674,7 +1674,7 @@ dmerr:
 		mbuf = mmap(NULL, stride * res * 3, PROT_READ, MAP_SHARED, fd, 0);
 		if(mbuf == MAP_FAILED) {
 			close(fd);
-			fprintf(stderr, "Mainmemory: <Memmapping failed>\n");
+			fprintf(stderr, "Mainmemory: <Memmapping failed 5>\n");
 			return;
 		}
 		memcpy(video, mbuf, stride * res * 3);
@@ -2080,7 +2080,7 @@ dmerr:
 
 		if((memory = (unsigned char*)mmap(0, 1920*1152*6, PROT_READ, MAP_SHARED, mem_fd, 0x6000000)) == MAP_FAILED)
 		{
-			fprintf(stderr, "Mainmemory: <Memmapping failed>\n");
+			fprintf(stderr, "Mainmemory: <Memmapping failed 6>\n");
 			return;
 		}
 
@@ -2423,7 +2423,7 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 
 		if((memory = (unsigned char*)mmap(0, fix_screeninfo.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, fix_screeninfo.smem_start-0x1000)) == MAP_FAILED)
 		{
-			fprintf(stderr, "Mainmemory: <Memmapping failed>\n");
+			fprintf(stderr, "Mainmemory: <Memmapping failed 7>\n");
 			return;
 		}
 
