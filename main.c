@@ -1587,7 +1587,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		fd = open("/dev/videograbber", O_RDWR);
 		if (fd < 0)
 		{
-			fprintf(stderr, "%s: failed to open device (%m)\n");
+			fprintf(stderr, "videograbber: failed to open device (%m)\n");
 			return;
 		}
 
@@ -1598,14 +1598,14 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		setup.out_format = VIDEOGRABBER_FORMAT_RGB888; // -1 would be VIDEOGRABBER_FORMAT_BGR888
 		if (ioctl(fd, VIDEOGRABBER_IOC_SETUP, &setup) < 0)
 		{
-			fprintf(stderr, "%s: can't setup videograbber (%m)\n");
+			fprintf(stderr, "getvideo: can't setup videograbber (%m)\n");
 			goto dmerr;
 		}
 
 		struct videograbber_vframe_t vf;
 		if (ioctl(fd, VIDEOGRABBER_IOC_GET_FRAME, &vf) != 0)
 		{
-			fprintf(stderr, "%s: can't get current frame (%m)\n");
+			fprintf(stderr, "getvideo: can't get current frame (%m)\n");
 			goto dmerr;
 		}
 
@@ -1613,7 +1613,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		void *srcAddr = mmap(NULL, mapLength, PROT_READ, MAP_SHARED, fd, vf.canvas_phys_addr[0]);
 		if (srcAddr == MAP_FAILED)
 		{
-			fprintf(stderr, "%s: error while mapping src buffer (%m)\n");
+			fprintf(stderr, "getvideo: error while mapping src buffer (%m)\n");
 			goto dmerr;
 		}
 
