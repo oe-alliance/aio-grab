@@ -161,8 +161,8 @@ static enum {UNKNOWN, DMNEW, WETEK, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XI
 
 static int chr_luma_stride = 0x40;
 static int chr_luma_register_offset = 0;
-static unsigned int registeroffset = 0;
-static unsigned int mem2memdma_register = 0;
+static off_t registeroffset = 0;
+static off_t mem2memdma_register = 0;
 static int quiet = 0;
 static int video_dev = 0;
 
@@ -1148,23 +1148,27 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			return;
 		}
 
-		int adr, adr2, ofs, ofs2, offset, pageoffset;
+		off_t adr, adr2, ofs, ofs2, offset, pageoffset;
 		int xtmp,xsub,ytmp,t2,dat1;
 
+/* The unsigned int(0) is present in some lines here to ensure that the
+ * "item << 24" doesn't result in sign extension if item has the top-bit
+ * set and we are using the 64-bit file-system API.
+ */
 		if (stb_type == BRCM73565 || stb_type == BRCM73625 || stb_type == BRCM7439DAGS || stb_type == BRCM7439 || stb_type == BRCM75845 || stb_type == BRCM72604) {
 			chr_luma_register_offset = 0x3c;
 
 			ofs = data[chr_luma_register_offset + 24] << 4; /* luma lines */
 			ofs2 = data[chr_luma_register_offset + 28] << 4; /* chroma lines */
-			adr2 = data[chr_luma_register_offset + 3] << 24 | data[chr_luma_register_offset + 2] << 16 | data[chr_luma_register_offset + 1] << 8;
+			adr2 = (unsigned int)0 | data[chr_luma_register_offset + 3] << 24 | data[chr_luma_register_offset + 2] << 16 | data[chr_luma_register_offset + 1] << 8;
 			stride = data[0x19] << 8 | data[0x18];
-			adr = data[0x37] << 24 | data[0x36] << 16 | data[0x35] << 8; /* start of videomem */
+			adr = (unsigned int)0 | data[0x37] << 24 | data[0x36] << 16 | data[0x35] << 8; /* start of videomem */
 		} else {
 			ofs = data[chr_luma_register_offset + 8] << 4; /* luma lines */
 			ofs2 = data[chr_luma_register_offset + 12] << 4; /* chroma lines */
-			adr2 = data[chr_luma_register_offset + 3] << 24 | data[chr_luma_register_offset + 2] << 16 | data[chr_luma_register_offset + 1] << 8;
+			adr2 = (unsigned int)0 | data[chr_luma_register_offset + 3] << 24 | data[chr_luma_register_offset + 2] << 16 | data[chr_luma_register_offset + 1] << 8;
 			stride = data[0x15] << 8 | data[0x14];
-			adr = data[0x1f] << 24 | data[0x1e] << 16 | data[0x1d] << 8; /* start of videomem */
+			adr = (unsigned int)0 | data[0x1f] << 24 | data[0x1e] << 16 | data[0x1d] << 8; /* start of videomem */
 		}
 		offset = adr2 - adr;
 		pageoffset = adr & 0xfff;
@@ -1610,7 +1614,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		}
 
 		size_t mapLength = vf.stride[0] * vf.height[0];
-		void *srcAddr = mmap(NULL, mapLength, PROT_READ, MAP_SHARED, fd, vf.canvas_phys_addr[0]);
+		void *srcAddr = mmap(NULL, mapLength, PROT_READ, MAP_SHARED, fd, (off_t)vf.canvas_phys_addr[0]);
 		if (srcAddr == MAP_FAILED)
 		{
 			fprintf(stderr, "getvideo: error while mapping src buffer (%m)\n");
@@ -2421,7 +2425,7 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 			return;
 		}
 
-		if((memory = (unsigned char*)mmap(0, fix_screeninfo.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, fix_screeninfo.smem_start-0x1000)) == MAP_FAILED)
+		if((memory = (unsigned char*)mmap(0, fix_screeninfo.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, (off_t)fix_screeninfo.smem_start-0x1000)) == MAP_FAILED)
 		{
 			fprintf(stderr, "Mainmemory: <Memmapping failed 8>\n");
 			return;
