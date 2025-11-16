@@ -37,6 +37,9 @@ Feel free to use the code for your own projects. See LICENSE file for details.
 #include <sys/mman.h>
 #include <linux/types.h>
 #include <linux/fb.h>
+#include <sys/stat.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 #if defined(__sh__)
 #include <sys/time.h>
@@ -148,7 +151,7 @@ static const int yuv2rgbtable_bv[256] = {
 void getvideo(unsigned char *video, int *xres, int *yres);
 void getvideo2(unsigned char *video, int *xres, int *yres);
 void getosd(unsigned char *osd, int *xres, int *yres);
-void smooth_resize(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
+void smooth_resize(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors); 
 void fast_resize(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
 void (*resize)(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
 void combine(unsigned char *output, const unsigned char *video, const unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
@@ -218,6 +221,48 @@ int readIntFromFile(const char *path, int base, int *out)
 }
 
 
+/* ---------------- AML helpers (PiG / MiniTV) ---------------- */
+static int aml_read_axis_(const char *path, int *L, int *T, int *R, int *B)
+{
+	FILE *f = fopen(path, "r");
+	if (!f)
+		return 0;
+
+	int l=0,t=0,r=-1,b=-1;
+	int ok = fscanf(f, "%d %d %d %d", &l, &t, &r, &b);
+	fclose(f);
+
+	if (ok != 4)
+	return 0;
+	/* disabled: e.g. 0 0 -1 -1 */
+	if (r < l || b < t)
+		return 0;
+
+	*L=l; *T=t; *R=r; *B=b;
+	return 1;
+}
+
+static int aml_pick_axis(int *L, int *T, int *W, int *H)
+{
+	int l=0,t=0,r=-1,b=-1;
+	if (aml_read_axis_("/sys/class/video/axis_pip", &l,&t,&r,&b) || aml_read_axis_("/sys/class/video/axis", &l,&t,&r,&b))
+	{
+		*L=l; *T=t; *W=r-l+1; *H=b-t+1;
+		return 1;
+	}
+	return 0;
+}
+
+static inline void clamp_rect(int *L,int *T,int *W,int *H,int outW,int outH)
+{
+    if (*L < 0) *L = 0;
+    if (*T < 0) *T = 0;
+    if (*L + *W > outW) *W = outW - *L;
+    if (*T + *H > outH) *H = outH - *T;
+    if (*W < 1) *W = 1;
+    if (*H < 1) *H = 1;
+}
+
 // main program
 
 int main(int argc, char **argv)
@@ -233,6 +278,13 @@ int main(int argc, char **argv)
 	aspect=1;
 
 	int dst_left = 0, dst_top = 0, dst_width = 0, dst_height = 0;
+	int vbuf_w = 0, vbuf_h = 0;
+	int dst_is_osd_pixels = 0;   
+	int aml_axis_active   = 0; 
+	int axis_debug        = 0;
+
+	if (getenv("GRAB_AXIS_DEBUG") && *getenv("GRAB_AXIS_DEBUG"))
+		axis_debug = 1;
 
 	unsigned char *video, *osd, *output;
 	int output_bytes=3;
@@ -783,6 +835,19 @@ int main(int argc, char **argv)
 		}
 	}
 
+	if (osd_only)
+	{
+		xres = xres_o;
+		yres = yres_o;
+		memcpy(output, osd, (size_t)xres * (size_t)yres * 4);
+		output_bytes = 4;
+		dst_left   = 0;
+		dst_top    = 0;
+		dst_width  = xres;
+		dst_height = yres;
+		goto post_merge;
+	}
+
 	// get aspect ratio
 	if (stb_type == VULCAN || stb_type == PALLAS)
 	{
@@ -853,36 +918,53 @@ int main(int argc, char **argv)
 	}
 	else
 	{
-		if (xres_v > xres_o && !use_osd_res && (width == 0 || width > xres_o))
-		{
+		if (xres_v > xres_o && !use_osd_res && (width == 0 || width > xres_o)) {
 			// resize osd to video size
 			xres = xres_v;
 			yres = yres_v;
-		}
-		else
-		{
+		} else {
 			// resize video to osd size
 			xres = xres_o;
 			yres = yres_o;
 		}
+
+		/* ============ AML axis mapping (MiniTV / PiG / PiP) =================
+		* RUN THIS AFTER xres/yres are known. If axis_pip (or axis) reports
+		* a valid rectangle, it is already in desktop pixels. Use it directly
+		* and prevent the legacy 720x576 remap from running.
+		* ==================================================================== */
+		if (stb_type == DMNEW) {
+			if (aml_pick_axis(&dst_left, &dst_top, &dst_width, &dst_height)) {
+				clamp_rect(&dst_left, &dst_top, &dst_width, &dst_height, xres, yres);
+				dst_is_osd_pixels = 1;
+				aml_axis_active   = 1;
+				if (axis_debug)
+					fprintf(stderr, "[AML axis] dst=%d,%d %dx%d shot=%dx%d\n", dst_left, dst_top, dst_width, dst_height, xres, yres);
+			}
+		}
 		if (dst_top || dst_left || dst_width || dst_height)
 		{
-			if (dst_width == 0) dst_width = 720;
-			if (dst_height == 0) dst_height = 576;
-			dst_top *= yres;
-			dst_top /= 576;
-			dst_height *= yres;
-			dst_height /= 576;
-			dst_left *= xres;
-			dst_left /= 720;
-			dst_width *= xres;
-			dst_width /= 720;
+			/* Legacy-Crop (Broadcom etc.) in 720x576 => OSD-Pixel */
+			if (!dst_is_osd_pixels) {
+				if (dst_width == 0)  dst_width  = 720;
+				if (dst_height == 0) dst_height = 576;
+				dst_top    = (int)((long long)dst_top    * yres / 576);
+				dst_height = (int)((long long)dst_height * yres / 576);
+				dst_left   = (int)((long long)dst_left   * xres / 720);
+				dst_width  = (int)((long long)dst_width  * xres / 720);
+			}
 		}
 		else
 		{
-			dst_width = xres;
+			dst_left = 0;
+			dst_top  = 0;
+			dst_width  = xres;
 			dst_height = yres;
 		}
+
+		vbuf_w = dst_width;
+		vbuf_h = dst_height;
+
 		if (xres_o != xres || yres_o != yres)
 		{
 			if (!quiet)
@@ -890,23 +972,20 @@ int main(int argc, char **argv)
 			resize(osd, output, xres_o, yres_o, xres, yres, 4);
 			memcpy(osd, output, xres * yres * 4);
 		}
-		if (xres_v != dst_width || yres_v != dst_height)
+
+		if (xres_v != vbuf_w || yres_v != vbuf_h)
 		{
 			if (!quiet)
-				fprintf(stderr, "Resizing Video to %d x %d ...\n", dst_width, dst_height);
-			resize(video, output, xres_v, yres_v, dst_width, dst_height, 3);
-			memset(video, 0, xres_v * yres_v * 3);
-			memcpy(video, output, dst_width * dst_height * 3);
+				fprintf(stderr, "Resizing Video to %d x %d ...\n", vbuf_w, vbuf_h);
+			resize(video, output, xres_v, yres_v, vbuf_w, vbuf_h, 3);
+			memcpy(video, output, vbuf_w * vbuf_h * 3);
+			xres_v = vbuf_w;
+			yres_v = vbuf_h;
 		}
 	}
 
 	// merge video and osd if neccessary
-	if (osd_only)
-	{
-		memcpy(output,osd,xres*yres*4);
-		output_bytes=4;
-	}
-	else if (video_only)
+	if (video_only)
 	{
 		memcpy(output,video,xres*yres*3);
 	}
@@ -914,9 +993,15 @@ int main(int argc, char **argv)
 	{
 		if (!quiet)
 			fprintf(stderr, "Merge Video with Framebuffer ...\n");
-		combine(output, video, osd, dst_left, dst_top, dst_width ? dst_width : xres, dst_height ? dst_height : yres, xres, yres);
+
+			if (aml_axis_active && axis_debug) {
+				fprintf(stderr, "[combine] dst=%d,%d %dx%d  vbuf=%dx%d  out=%dx%d\n", dst_left, dst_top, dst_width, dst_height, vbuf_w, vbuf_h, xres, yres);
+			}
+
+			combine(output, video, osd, dst_left, dst_top, vbuf_w ? vbuf_w : xres, vbuf_h ? vbuf_h : yres, xres, yres);
 	}
 
+post_merge:
 	// resize to specific width ?
 	if (width)
 	{
@@ -962,7 +1047,7 @@ int main(int argc, char **argv)
 	FILE *fd2;
 	if (filename)
 	{
-		fd2 = fopen(filename, "wr");
+		fd2 = fopen(filename, "wb");
 		if (!fd2)
 		{
 			fprintf(stderr, "Failed to open '%s' for output\n", filename);
@@ -2356,11 +2441,13 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 		return;
 	}
 
-	if(!(lfb = (unsigned char*)mmap(0, fix_screeninfo.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fb, 0)))
+	lfb = (unsigned char*)mmap(0, fix_screeninfo.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fb, 0);
+	if (lfb == MAP_FAILED)
 	{
 		fprintf(stderr, "Framebuffer: <Memmapping failed 7>\n");
+		close(fb);
 		return;
-	}
+		}
 
 	if ( var_screeninfo.bits_per_pixel == 32 )
 	{
@@ -2490,6 +2577,7 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 			pos2+=ofs;
 		}
 	}
+	munmap(lfb, fix_screeninfo.smem_len);
 	close(fb);
 
 	*xres=var_screeninfo.xres;
