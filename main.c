@@ -2449,6 +2449,26 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 		return;
 		}
 
+	/*
+	 * Triple-buffered framebuffer fix (DM900/DM920, stb_type == BRCM7439):
+	 * Enigma2 rotates OSD pages by panning to Y=0, Y=yres, Y=2*yres.  The
+	 * code below reads from offset 0 in lfb, but the currently-displayed
+	 * frame may be at a higher yoffset.  Fix: memmove the front-buffer page
+	 * to Y=0 in the mmap, then call FBIOPAN_DISPLAY to move the hardware
+	 * pointer to Y=0.  Grab then reads the correct frame and E2 will not
+	 * render into Y=0 while it is the hardware front buffer.
+	 */
+	if (stb_type == BRCM7439 &&
+	    var_screeninfo.yres_virtual > var_screeninfo.yres && var_screeninfo.yoffset != 0)
+	{
+		unsigned long src_off   = (unsigned long)var_screeninfo.yoffset * fix_screeninfo.line_length;
+		unsigned long page_bytes = (unsigned long)var_screeninfo.yres   * fix_screeninfo.line_length;
+		memmove(lfb, lfb + src_off, page_bytes);
+		var_screeninfo.xoffset = 0;
+		var_screeninfo.yoffset = 0;
+		ioctl(fb, FBIOPAN_DISPLAY, &var_screeninfo);
+	}
+
 	if ( var_screeninfo.bits_per_pixel == 32 )
 	{
 		if (!quiet)
