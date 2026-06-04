@@ -736,7 +736,7 @@ int main(int argc, char **argv)
 					"-i (video device) to grab video (default 0)\n"
 					"-d always use osd resolution (good for skinshots)\n"
 					"-n dont correct 16:9 aspect ratio\n"
-					"-r (size) resize to a fixed width, maximum: 1920\n"
+					"-r (size) resize to a fixed width, maximum: 1920, 3840 on DreamNextGen\n"
 					"-l always 4:3, create letterbox if 16:9\n"
 					"-b use bicubic picture resize (slow but smooth)\n"
 					"-j (quality) produce jpg files instead of bmp (quality 0-100)\n"
@@ -767,10 +767,13 @@ int main(int argc, char **argv)
 				break;
 			case 'r': // use given resolution
 				width=atoi(optarg);
-				if (width > 1920)
 				{
-					fprintf(stderr, "Error: -r (size) ist limited to 1920 pixel !\n");
-					return 1;
+					int max_resize_width = (stb_type == DMNEW) ? 3840 : 1920;
+					if (width > max_resize_width)
+					{
+						fprintf(stderr, "Error: -r (size) is limited to %d pixels!\n", max_resize_width);
+						return 1;
+					}
 				}
 				break;
 			case 's': // stdout
@@ -803,18 +806,29 @@ int main(int argc, char **argv)
 	if (optind < argc) // filename
 		filename = argv[optind];
 
-	int mallocsize=1920*1080;
+	size_t mallocsize = 1920U * 1080U;
 
-	if (stb_type == VULCAN || stb_type == PALLAS)
-		mallocsize=720*576;
+	if (stb_type == DMNEW)
+		mallocsize = 3840U * 2160U;
+	else if (stb_type == VULCAN || stb_type == PALLAS)
+		mallocsize = 720U * 576U;
 
-	video = (unsigned char *)malloc(mallocsize*3);
-	osd = (unsigned char *)malloc(mallocsize*4);
+	video = (unsigned char *)malloc(mallocsize * 3U);
+	osd = (unsigned char *)malloc(mallocsize * 4U);
 
 	if ((stb_type == VULCAN || stb_type == PALLAS) && width > 720)
-		mallocsize=width*(width * 0.8 + 1);
+		mallocsize = (size_t)width * (size_t)(width * 0.8 + 1);
 
-	output = (unsigned char *)malloc(mallocsize*4);
+	output = (unsigned char *)malloc(mallocsize * 4U);
+
+	if (!video || !osd || !output)
+	{
+		fprintf(stderr, "Out of memory while allocating capture buffers\n");
+		free(video);
+		free(osd);
+		free(output);
+		return 1;
+	}
 
 	// get osd
 	if (!video_only)
@@ -1660,18 +1674,27 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 
 		int width = 1280;
 		int height = 720;
-		// set a fixed aspect ratio of 16:9
-		// calucation: 256 * height / width
+		// Set a fixed aspect ratio of 16:9.
+		// Calculation: 256 * height / width.
 		int aspect = 0x90;
 
 		readIntFromFile("/sys/class/video/frame_width", 10, &width);
 		readIntFromFile("/sys/class/video/frame_height", 10, &height);
 		readIntFromFile("/sys/class/video/frame_aspect_ratio", 16, &aspect);
 
-		width = zoomWidth(width, height, aspect); //adjust aspect of source -> force 
+		if (width <= 0 || height <= 0)
+		{
+			width = 1280;
+			height = 720;
+		}
 
-		int ret = -1;
+		width = zoomWidth(width, height, aspect); // adjust anamorphic sources, e.g. 720x576 16:9 -> 1024x576
+		if (width <= 0)
+			width = 1280;
+
 		int fd = -1;
+		void *srcAddr = MAP_FAILED;
+		size_t mapLength = 0;
 
 		fd = open("/dev/videograbber", O_RDWR);
 		if (fd < 0)
@@ -1683,8 +1706,8 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		struct videograbber_setup_t setup = { 0 };
 		setup.out_width = width;
 		setup.out_height = height;
-		setup.out_stride = width * 3; // bytes per line (you can use your target's stride here if needed)
-		setup.out_format = VIDEOGRABBER_FORMAT_RGB888; // -1 would be VIDEOGRABBER_FORMAT_BGR888
+		setup.out_stride = width * 3;
+		setup.out_format = VIDEOGRABBER_FORMAT_RGB888;
 		if (ioctl(fd, VIDEOGRABBER_IOC_SETUP, &setup) < 0)
 		{
 			fprintf(stderr, "getvideo: can't setup videograbber (%m)\n");
@@ -1692,32 +1715,50 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 		}
 
 		struct videograbber_vframe_t vf;
+		memset(&vf, 0, sizeof(vf));
 		if (ioctl(fd, VIDEOGRABBER_IOC_GET_FRAME, &vf) != 0)
 		{
 			fprintf(stderr, "getvideo: can't get current frame (%m)\n");
 			goto dmerr;
 		}
 
-		size_t mapLength = vf.stride[0] * vf.height[0];
-		void *srcAddr = mmap(NULL, mapLength, PROT_READ, MAP_SHARED, fd, (off_t)vf.canvas_phys_addr[0]);
+		const int bytes_per_pixel = 3;
+		const size_t packed_stride = (size_t)vf.width[0] * (size_t)bytes_per_pixel;
+		const size_t source_stride = (size_t)vf.stride[0];
+		mapLength = source_stride * (size_t)vf.height[0];
+
+		if (vf.width[0] <= 0 || vf.height[0] <= 0 || source_stride < packed_stride || mapLength == 0)
+		{
+			fprintf(stderr,
+				"getvideo: invalid frame geometry width=%d height=%d stride=%d packed_stride=%zu\n",
+				vf.width[0], vf.height[0], vf.stride[0], packed_stride);
+			goto dmerr;
+		}
+
+		srcAddr = mmap(NULL, mapLength, PROT_READ, MAP_SHARED, fd, (off_t)vf.canvas_phys_addr[0]);
 		if (srcAddr == MAP_FAILED)
 		{
 			fprintf(stderr, "getvideo: error while mapping src buffer (%m)\n");
 			goto dmerr;
 		}
 
-		memcpy(video, srcAddr, mapLength);
+		for (int y = 0; y < vf.height[0]; y++)
+		{
+			memcpy(video + ((size_t)y * packed_stride),
+			       (const unsigned char *)srcAddr + ((size_t)y * source_stride),
+			       packed_stride);
+		}
 
-		munmap(srcAddr, mapLength);
-
-		*xres=vf.width[0];
-		*yres=vf.height[0];
+		*xres = vf.width[0];
+		*yres = vf.height[0];
 
 dmerr:
-	if (fd >= 0)
-		close(fd);
+		if (srcAddr != MAP_FAILED)
+			munmap(srcAddr, mapLength);
+		if (fd >= 0)
+			close(fd);
 
-	return;
+		return;
 
 	}
 	else if (stb_type == WETEK)
@@ -2447,7 +2488,7 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 		fprintf(stderr, "Framebuffer: <Memmapping failed 7>\n");
 		close(fb);
 		return;
-		}
+	}
 
 	/*
 	 * Triple-buffered framebuffer fix (DM900/DM920, stb_type == BRCM7439):
@@ -2469,28 +2510,44 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 		ioctl(fb, FBIOPAN_DISPLAY, &var_screeninfo);
 	}
 
+	const int fb_bytespp = var_screeninfo.bits_per_pixel / 8;
+	const size_t fb_offset =
+		(size_t)var_screeninfo.yoffset * (size_t)fix_screeninfo.line_length +
+		(size_t)var_screeninfo.xoffset * (size_t)fb_bytespp;
+	const size_t fb_line_bytes = (size_t)var_screeninfo.xres * (size_t)fb_bytespp;
+	const size_t fb_needed =
+		fb_offset +
+		(size_t)(var_screeninfo.yres ? (var_screeninfo.yres - 1) : 0) * (size_t)fix_screeninfo.line_length +
+		fb_line_bytes;
+
+	if (fb_bytespp <= 0 || fb_line_bytes == 0 || fb_needed > (size_t)fix_screeninfo.smem_len)
+	{
+		fprintf(stderr,
+			"Framebuffer: invalid geometry xres=%u yres=%u xoffset=%u yoffset=%u line_length=%u smem_len=%u bpp=%u\n",
+			var_screeninfo.xres,
+			var_screeninfo.yres,
+			var_screeninfo.xoffset,
+			var_screeninfo.yoffset,
+			fix_screeninfo.line_length,
+			fix_screeninfo.smem_len,
+			var_screeninfo.bits_per_pixel);
+		munmap(lfb, fix_screeninfo.smem_len);
+		close(fb);
+		return;
+	}
+
+	unsigned char *fb_page = lfb + fb_offset;
+
 	if ( var_screeninfo.bits_per_pixel == 32 )
 	{
 		if (!quiet)
 			fprintf(stderr, "Grabbing 32bit Framebuffer ...\n");
 
 		// get 32bit framebuffer
-		pos=pos1=pos2=0;
-		ofs=fix_screeninfo.line_length-(var_screeninfo.xres*4);
-
-		if (ofs == 0) // we have no offset ? so do it the easy and fast way
-		{
-			memcpy(osd,lfb,fix_screeninfo.line_length*var_screeninfo.yres);
-		}
-		else // DM7025 have an offset, so we have to do it line for line
-		{
-			unsigned char *memory; // use additional buffer to speed up especially when using hd skins
-			memory = (unsigned char *)malloc(fix_screeninfo.line_length*var_screeninfo.yres);
-			memcpy(memory,lfb,fix_screeninfo.line_length*var_screeninfo.yres);
-			for (y=0; y < var_screeninfo.yres; y+=1)
-				memcpy(osd+y*var_screeninfo.xres*4,memory+y*fix_screeninfo.line_length,var_screeninfo.xres*4);
-			free(memory);
-		}
+		for (y=0; y < var_screeninfo.yres; y+=1)
+			memcpy(osd + ((size_t)y * (size_t)var_screeninfo.xres * 4U),
+			       fb_page + ((size_t)y * (size_t)fix_screeninfo.line_length),
+			       (size_t)var_screeninfo.xres * 4U);
 	} else if ( var_screeninfo.bits_per_pixel == 16 )
 	{
 		if (!quiet)
@@ -2504,7 +2561,7 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 		{
 			for (x=0; x < var_screeninfo.xres; x+=1)
 			{
-				color = lfb[pos2] << 8 | lfb[pos2+1];
+				color = fb_page[pos2] << 8 | fb_page[pos2+1];
 				pos2+=2;
 
 				osd[pos1++] = BLUE565(color); // b
@@ -2587,7 +2644,7 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 		{
 			for (x=0; x < var_screeninfo.xres; x+=1)
 			{
-				color = lfb[pos2++];
+				color = fb_page[pos2++];
 
 				osd[pos1++] = bl[color]; // b
 				osd[pos1++] = gn[color]; // g
