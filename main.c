@@ -40,6 +40,10 @@ Feel free to use the code for your own projects. See LICENSE file for details.
 #include <sys/stat.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <dlfcn.h>
+#include <dirent.h>
+#include <errno.h>
+#include <elf.h>
 
 #if defined(__sh__)
 #include <sys/time.h>
@@ -148,6 +152,9 @@ static const int yuv2rgbtable_bv[256] = {
 0xFF33A280, 0xFF353B3B, 0xFF36D3F6, 0xFF386CB1, 0xFF3A056C, 0xFF3B9E27, 0xFF3D36E2, 0xFF3ECF9D, 0xFF406858, 0xFF420113, 0xFF4399CE, 0xFF453289, 0xFF46CB44, 0xFF4863FF, 0xFF49FCBA, 0xFF4B9575, 0xFF4D2E30, 0xFF4EC6EB, 0xFF505FA6, 0xFF51F861, 0xFF53911C, 0xFF5529D7, 0xFF56C292, 0xFF585B4D, 0xFF59F408, 0xFF5B8CC3, 0xFF5D257E, 0xFF5EBE39, 0xFF6056F4, 0xFF61EFAF, 0xFF63886A, 0xFF652125, 0xFF66B9E0, 0xFF68529B, 0xFF69EB56, 0xFF6B8411, 0xFF6D1CCC, 0xFF6EB587, 0xFF704E42, 0xFF71E6FD, 0xFF737FB8, 0xFF751873, 0xFF76B12E, 0xFF7849E9, 0xFF79E2A4, 0xFF7B7B5F, 0xFF7D141A, 0xFF7EACD5, 0xFF804590, 0xFF81DE4B, 0xFF837706, 0xFF850FC1, 0xFF86A87C, 0xFF884137, 0xFF89D9F2, 0xFF8B72AD, 0xFF8D0B68, 0xFF8EA423, 0xFF903CDE, 0xFF91D599, 0xFF936E54, 0xFF95070F, 0xFF969FCA, 0xFF983885, 0xFF99D140, 0xFF9B69FB, 0xFF9D02B6, 0xFF9E9B71, 0xFFA0342C, 0xFFA1CCE7, 0xFFA365A2, 0xFFA4FE5D, 0xFFA69718, 0xFFA82FD3, 0xFFA9C88E, 0xFFAB6149, 0xFFACFA04, 0xFFAE92BF, 0xFFB02B7A, 0xFFB1C435, 0xFFB35CF0, 0xFFB4F5AB, 0xFFB68E66, 0xFFB82721, 0xFFB9BFDC, 0xFFBB5897, 0xFFBCF152, 0xFFBE8A0D, 0xFFC022C8, 0xFFC1BB83, 0xFFC3543E, 0xFFC4ECF9, 0xFFC685B4, 0xFFC81E6F, 0xFFC9B72A, 0xFFCB4FE5, 0xFFCCE8A0, 0xFFCE815B, 0xFFD01A16, 0xFFD1B2D1, 0xFFD34B8C, 0xFFD4E447, 0xFFD67D02, 0xFFD815BD, 0xFFD9AE78, 0xFFDB4733, 0xFFDCDFEE, 0xFFDE78A9, 0xFFE01164, 0xFFE1AA1F, 0xFFE342DA, 0xFFE4DB95, 0xFFE67450, 0xFFE80D0B, 0xFFE9A5C6, 0xFFEB3E81, 0xFFECD73C, 0xFFEE6FF7, 0xFFF008B2, 0xFFF1A16D, 0xFFF33A28, 0xFFF4D2E3, 0xFFF66B9E, 0xFFF80459, 0xFFF99D14, 0xFFFB35CF, 0xFFFCCE8A, 0xFFFE6745, 0x0, 0x198BB, 0x33176, 0x4CA31, 0x662EC, 0x7FBA7, 0x99462, 0xB2D1D, 0xCC5D8, 0xE5E93, 0xFF74E, 0x119009, 0x1328C4, 0x14C17F, 0x165A3A, 0x17F2F5, 0x198BB0, 0x1B246B, 0x1CBD26, 0x1E55E1, 0x1FEE9C, 0x218757, 0x232012, 0x24B8CD, 0x265188, 0x27EA43, 0x2982FE, 0x2B1BB9, 0x2CB474, 0x2E4D2F, 0x2FE5EA, 0x317EA5, 0x331760, 0x34B01B, 0x3648D6, 0x37E191, 0x397A4C, 0x3B1307, 0x3CABC2, 0x3E447D, 0x3FDD38, 0x4175F3, 0x430EAE, 0x44A769, 0x464024, 0x47D8DF, 0x49719A, 0x4B0A55, 0x4CA310, 0x4E3BCB, 0x4FD486, 0x516D41, 0x5305FC, 0x549EB7, 0x563772, 0x57D02D, 0x5968E8, 0x5B01A3, 0x5C9A5E, 0x5E3319, 0x5FCBD4, 0x61648F, 0x62FD4A, 0x649605, 0x662EC0, 0x67C77B, 0x696036, 0x6AF8F1, 0x6C91AC, 0x6E2A67, 0x6FC322, 0x715BDD, 0x72F498, 0x748D53, 0x76260E, 0x77BEC9, 0x795784, 0x7AF03F, 0x7C88FA, 0x7E21B5, 0x7FBA70, 0x81532B, 0x82EBE6, 0x8484A1, 0x861D5C, 0x87B617, 0x894ED2, 0x8AE78D, 0x8C8048, 0x8E1903, 0x8FB1BE, 0x914A79, 0x92E334, 0x947BEF, 0x9614AA, 0x97AD65, 0x994620, 0x9ADEDB, 0x9C7796, 0x9E1051, 0x9FA90C, 0xA141C7, 0xA2DA82, 0xA4733D, 0xA60BF8, 0xA7A4B3, 0xA93D6E, 0xAAD629, 0xAC6EE4, 0xAE079F, 0xAFA05A, 0xB13915, 0xB2D1D0, 0xB46A8B, 0xB60346, 0xB79C01, 0xB934BC, 0xBACD77, 0xBC6632, 0xBDFEED, 0xBF97A8, 0xC13063, 0xC2C91E, 0xC461D9, 0xC5FA94, 0xC7934F, 0xC92C0A, 0xCAC4C5
 };
 
+void getvideo_hisi(unsigned char *video, int *xres, int *yres);
+static int hisi_uses_chip_backend(void);
+static int hisi_uses_composited_snapshot(void);
 void getvideo(unsigned char *video, int *xres, int *yres);
 void getvideo2(unsigned char *video, int *xres, int *yres);
 void getosd(unsigned char *osd, int *xres, int *yres);
@@ -157,9 +164,9 @@ void (*resize)(const unsigned char *source, unsigned char *dest, int xsource, in
 void combine(unsigned char *output, const unsigned char *video, const unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
 #if !defined(__sh__)
-static enum {UNKNOWN, DMNEW, WETEK, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7251, BRCM7252, BRCM7252S, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7444, BRCM7552, BRCM7581, BRCM7583, BRCM7584, BRCM72604VU, BRCM72604, BRCM7278, BRCM75845, BRCM7366, BRCM73625, BRCM73565, BRCM7439DAGS, BRCM7439, HISIL_ARM} stb_type = UNKNOWN;
+static enum {UNKNOWN, DMNEW, WETEK, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7251, BRCM7252, BRCM7252S, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7444, BRCM7552, BRCM7581, BRCM7583, BRCM7584, BRCM72604VU, BRCM72604, BRCM7278, BRCM75845, BRCM7366, BRCM73625, BRCM73565, BRCM7439DAGS, BRCM7439, HISIL_ARM, HISI_3716MV410, HISI_3716MV430, HISI_3798CV200, HISI_3798MV200, HISI_3798MV300} stb_type = UNKNOWN;
 #else
-static enum {UNKNOWN, DMNEW, WETEK, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7251, BRCM7252, BRCM7252S, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7444, BRCM7552, BRCM7581, BRCM7583, BRCM7584, BRCM72604VU, BRCM72604, BRCM7278, BRCM75845, BRCM7366, BRCM73625, BRCM73565, BRCM7439DAGS, BRCM7439, HISIL_ARM} stb_type = UNKNOWN;
+static enum {UNKNOWN, DMNEW, WETEK, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7251, BRCM7252, BRCM7252S, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7444, BRCM7552, BRCM7581, BRCM7583, BRCM7584, BRCM72604VU, BRCM72604, BRCM7278, BRCM75845, BRCM7366, BRCM73625, BRCM73565, BRCM7439DAGS, BRCM7439, HISIL_ARM, HISI_3716MV410, HISI_3716MV430, HISI_3798CV200, HISI_3798MV200, HISI_3798MV300} stb_type = UNKNOWN;
 #endif
 
 static int chr_luma_stride = 0x40;
@@ -168,6 +175,18 @@ static off_t registeroffset = 0;
 static off_t mem2memdma_register = 0;
 static int quiet = 0;
 static int video_dev = 0;
+
+/*
+ * Runtime request flags used by HiSilicon backends.  Some HI3798
+ * generations return an already hardware-composed display image from
+ * HI_UNF_DISP_AcquireSnapshot().  All-mode can use that composed
+ * snapshot directly; video-only needs the VO/window capture path to
+ * avoid framebuffer/OSD content.
+ */
+static int hisi_grab_request_video_only = 0;
+
+static void *hisi_lib_common = NULL;
+static void *hisi_lib_msp    = NULL;
 
 enum videograbber_pixelformat
 {
@@ -267,7 +286,7 @@ static inline void clamp_rect(int *L,int *T,int *W,int *H,int outW,int outH)
 
 int main(int argc, char **argv)
 {
-	int xres_v,yres_v,xres_o,yres_o,xres,yres,aspect;
+	int xres_v = 0, yres_v = 0, xres_o = 0, yres_o = 0, xres = 0, yres = 0, aspect;
 	int c,osd_only,video_only,use_osd_res,width,use_png,use_jpg,jpg_quality,no_aspect,use_letterbox;
 
 	// we use fast resize as standard now
@@ -288,6 +307,7 @@ int main(int argc, char **argv)
 
 	unsigned char *video, *osd, *output;
 	int output_bytes=3;
+	int hisi_composited_all = 0;
 
 	const char* filename = "/tmp/screenshot.bmp";
 
@@ -570,14 +590,39 @@ int main(int argc, char **argv)
 					stb_type = BRCM7366;
 					break;
 				}
-				else if (strstr(buf,"hi3798"))
+				else if (strstr(buf,"hi3798") || strstr(buf,"hi3716"))
 				{
+					/* Legacy HiSilicon images report e.g. "hi3798mv200" or
+					 * "hi3716mv430" and must stay on the existing HISIL_ARM
+					 * path. New-format HiSi chipset strings do not have the
+					 * leading "hi" prefix and are routed per chip below.
+					 */
 					stb_type = HISIL_ARM;
 					break;
 				}
-				else if (strstr(buf,"hi3716"))
+				else if (strstr(buf,"3716mv410"))
 				{
-					stb_type = HISIL_ARM;
+					stb_type = HISI_3716MV410;
+					break;
+				}
+				else if (strstr(buf,"3716mv430"))
+				{
+					stb_type = HISI_3716MV430;
+					break;
+				}
+				else if (strstr(buf,"3798cv200"))
+				{
+					stb_type = HISI_3798CV200;
+					break;
+				}
+				else if (strstr(buf,"3798mv200"))
+				{
+					stb_type = HISI_3798MV200;
+					break;
+				}
+				else if (strstr(buf,"3798mv300"))
+				{
+					stb_type = HISI_3798MV300;
 					break;
 				}
 				else if (strstr(buf,"Meson-6") || strstr(buf,"Meson-64"))
@@ -827,11 +872,30 @@ int main(int argc, char **argv)
 		free(video);
 		free(osd);
 		free(output);
+
+		/* Close HiSi libs last - their destructors corrupt the heap */
+		if (hisi_lib_msp)    dlclose(hisi_lib_msp);
+		if (hisi_lib_common) dlclose(hisi_lib_common);
+
 		return 1;
 	}
 
+	/*
+	 * 3798mv200/mv300: DISP snapshot already contains the hardware-composed
+	 * video+OSD image. In all/default mode use that image directly instead
+	 * of blending the framebuffer a second time.
+	 */
+	if (hisi_uses_composited_snapshot() && !video_only && !osd_only)
+	{
+		hisi_composited_all = 1;
+		if (!quiet)
+			fprintf(stderr, "HiSi 3798: using composed DISP snapshot for all-mode, skipping second OSD blend\n");
+	}
+
+	hisi_grab_request_video_only = video_only;
+
 	// get osd
-	if (!video_only)
+	if (!video_only && !hisi_composited_all)
 		getosd(osd,&xres_o,&yres_o);
 
 	// get video
@@ -842,6 +906,10 @@ int main(int argc, char **argv)
 		if (stb_type == BRCM7366 || stb_type == BRCM7251 || stb_type == BRCM7252 || stb_type == BRCM7252S || stb_type == BRCM7444 || stb_type == BRCM72604VU || stb_type == BRCM7278 || stb_type == HISIL_ARM)
 		{
 			getvideo2(video, &xres_v,&yres_v);
+		}
+		else if (hisi_uses_chip_backend())
+		{
+			getvideo_hisi(video, &xres_v, &yres_v);
 		}
 		else
 		{
@@ -855,6 +923,28 @@ int main(int argc, char **argv)
 		yres = yres_o;
 		memcpy(output, osd, (size_t)xres * (size_t)yres * 4);
 		output_bytes = 4;
+		dst_left   = 0;
+		dst_top    = 0;
+		dst_width  = xres;
+		dst_height = yres;
+		goto post_merge;
+	}
+
+	if (hisi_composited_all)
+	{
+		if (xres_v <= 0 || yres_v <= 0)
+		{
+			fprintf(stderr, "HiSi 3798: composed snapshot failed, empty video frame\n");
+			xres = 0;
+			yres = 0;
+		}
+		else
+		{
+			xres = xres_v;
+			yres = yres_v;
+			memcpy(output, video, (size_t)xres * (size_t)yres * 3U);
+			output_bytes = 3;
+		}
 		dst_left   = 0;
 		dst_top    = 0;
 		dst_width  = xres;
@@ -983,7 +1073,12 @@ int main(int argc, char **argv)
 		{
 			if (!quiet)
 				fprintf(stderr, "Resizing OSD to %d x %d ...\n", xres, yres);
+
+			fprintf(stderr, "before resize\n");
 			resize(osd, output, xres_o, yres_o, xres, yres, 4);
+			fprintf(stderr, "after resize\n");  // kommt das?
+
+			//resize(osd, output, xres_o, yres_o, xres, yres, 4);
 			memcpy(osd, output, xres * yres * 4);
 		}
 
@@ -1016,6 +1111,8 @@ int main(int argc, char **argv)
 	}
 
 post_merge:
+
+
 	// resize to specific width ?
 	if (width)
 	{
@@ -1128,6 +1225,7 @@ post_merge:
 		if (output_bytes == 3) // swap bgr<->rgb
 		{
 			int y;
+			
 			#pragma omp parallel for shared(output)
 			for (y=0; y<yres; y++)
 			{
@@ -1195,8 +1293,1088 @@ post_merge:
 	free(video);
 	free(osd);
 	free(output);
+    /* Close HiSi libs last - their destructors corrupt the heap */
+    if (hisi_lib_msp)    dlclose(hisi_lib_msp);
+    if (hisi_lib_common) dlclose(hisi_lib_common);
+	return 0;
+}
+
+
+/* ============================================================
+ * HiSilicon video grab backends
+ *
+ * 3798cv200:
+ *   HI_UNF_DISP_AcquireSnapshot() returns a YUV420 semi-planar frame.
+ *
+ * 3798mv200 / 3798mv300:
+ *   HI_UNF_DISP_AcquireSnapshot() returns a YUV420 semi-planar frame but can
+ *   already contain the hardware-composed video+OSD output.  For all/default
+ *   mode that composed snapshot is useful and avoids a second software blend.
+ *   For video-only mode first try the VO/window capture path, because that is
+ *   the only plausible way to get the video plane before OSD composition.  If
+ *   VO capture fails, fall back to DISP snapshot and warn that the result may
+ *   still contain OSD.
+ *   Some vendor grabs map only u32YAddr and derive chroma by
+ *   u32CAddr - u32YAddr because u32CAddr may not be page-aligned.
+ *
+ * 3716mv430:
+ *   HI_UNF_DISP_AcquireSnapshot() is not the correct video path.
+ *   The vendor grab binary uses:
+ *     HI_SYS_Init
+ *     HI_UNF_DISP_Init
+ *     HI_UNF_VO_Init
+ *     HI_MPI_WIN_GetHandle(&winInfo)
+ *     HI_UNF_VO_CapturePicture(hWin, &cap)
+ *     HI_TDE2_MbBlit(...)
+ *     HI_MMZ_Map(dstPhys)
+ *   The captured picture is macroblock/tiled YUV, so CPU NV21 conversion is
+ *   not sufficient. TDE must de-tile/convert it to a linear BGR888/RGB888 buffer.
+ *
+ * 3716mv410:
+ *   Old vendor grab -v triggers /proc/msp/win0100 capture and reads the
+ *   generated planar YUV420 file from /home/capturevideo.
+ * ============================================================ */
+
+/* HiSilicon basic types */
+typedef unsigned int   HI_U32;
+typedef unsigned char  HI_U8;
+typedef int            HI_S32;
+typedef void           HI_VOID;
+typedef HI_U32         HI_HANDLE;
+
+#define HI_SUCCESS      0
+#define HI_UNF_DISPLAY1 1
+#define HI_DRV_DISPLAY_1 1
+#define HI_UNF_VO_DEV_MODE_NORMAL 0
+
+#define HISI_TDE_COLOR_FMT_YCBCR420MBP 6
+#define HISI_TDE_COLOR_FMT_BGR888      7
+
+
+/*
+ * HI_UNF_VIDEO_FRAME_INFO_S - layout used by the 3798 DISP snapshot path.
+ * Allocated on heap (4096 bytes) because some SDK builds write beyond the
+ * public struct size.
+ */
+typedef struct {
+	HI_U32  u32Unk0;        /* 0x00 */
+	HI_U32  u32YPhyAddr;    /* 0x04 - luma physical address */
+	HI_U32  u32CPhyAddr;    /* 0x08 - chroma physical address */
+	HI_U32  u32Unk0c;       /* 0x0c */
+	HI_U32  u32YStride;     /* 0x10 - luma stride */
+	HI_U32  u32CStride;     /* 0x14 - chroma stride */
+	HI_U32  u32Pad1[7];     /* 0x18 - 0x30 */
+	HI_U32  u32Width;       /* 0x34 - frame width in pixels */
+	HI_U32  u32Height;      /* 0x38 - frame height in pixels */
+	HI_U32  u32Pad2[7];     /* 0x3c - 0x53 */
+	HI_U32  u32PixelFormat; /* 0x54 - 1 = NV21 (YUV420 semi-planar) */
+	HI_U32  u32Pad3[64];    /* remaining fields / SDK-private tail */
+} HI_UNF_VIDEO_FRAME_INFO_S;
+
+/* 3716mv410/mv430: UNF capture struct fields consumed by the vendor grab binary. */
+typedef struct {
+	HI_U32  u32Unk0;        /* 0x00 */
+	HI_U32  u32YPhyAddr;    /* 0x04 */
+	HI_U32  u32CPhyAddr;    /* 0x08 */
+	HI_U32  u32Unk0c;       /* 0x0c */
+	HI_U32  u32YStride;     /* 0x10 */
+	HI_U32  u32CStride;     /* 0x14 */
+	HI_U32  u32Pad1[7];     /* 0x18 - 0x30 */
+	HI_U32  u32Width;       /* 0x34 */
+	HI_U32  u32Height;      /* 0x38 */
+	HI_U32  u32Pad2[128];   /* SDK-private tail */
+} HI_UNF_3716_CAPTURE_INFO_S;
+
+/*
+ * 3716mv410/mv430 WIN_GET_HANDLE_S as used by the vendor grab source:
+ *   enDisp = HI_DRV_DISPLAY_1;
+ *   HI_MPI_WIN_GetHandle(&winInfo);
+ *   hWin = winInfo.ahWinHandle[0] when u32WinNumber > 0.
+ */
+typedef struct {
+	HI_U32    enDisp;          /* 0x00: HI_DRV_DISPLAY_1 */
+	HI_U32    u32WinNumber;    /* 0x04: number of handles returned */
+	HI_HANDLE ahWinHandle[16]; /* 0x08: first usable window handle */
+} WIN_GET_HANDLE_S;
+
+/* Minimal TDE structures matching the old grab call frames. */
+typedef struct {
+	HI_S32 s32Xpos;
+	HI_S32 s32Ypos;
+	HI_U32 u32Width;
+	HI_U32 u32Height;
+} HI_TDE2_RECT_S;
+
+typedef struct {
+	HI_U32 enColorFmt;       /* 6 = YCbCr420 macroblock picture */
+	HI_U32 u32YPhyAddr;
+	HI_U32 u32Width;
+	HI_U32 u32Height;
+	HI_U32 u32YStride;
+	HI_U32 u32CbCrPhyAddr;
+	HI_U32 u32CbCrStride;
+} HI_TDE2_MB_S;
+
+typedef struct {
+	HI_U32 u32PhyAddr;
+	HI_U32 enColorFmt;       /* 7 = RGB888 in the old grab binary */
+	HI_U32 u32Height;
+	HI_U32 u32Width;
+	HI_U32 u32Stride;
+	HI_U32 u32AlphaPhyAddr;
+	HI_U32 u32ClutPhyAddr;
+	HI_U32 bAlphaMax255;
+	HI_U32 bAlphaExt1555;
+	HI_U8  bYCbCrClut;
+	HI_U8  u8Alpha0;
+	HI_U8  u8Alpha1;
+	HI_U8  u8Reserved;
+	HI_U32 u32Reserved[2];
+} HI_TDE2_SURFACE_S;
+
+typedef struct {
+	HI_U32 u32Word[9];       /* old grab sets word[5]=1, word[6]=3 */
+} HI_TDE2_MBOPT_S;
+
+/* Function pointer types for dynamically loaded HiSi symbols */
+typedef HI_S32 (*PFN_HI_SYS_Init)(HI_VOID);
+typedef HI_S32 (*PFN_HI_SYS_DeInit)(HI_VOID);
+typedef HI_S32 (*PFN_HI_UNF_DISP_Init)(HI_VOID);
+typedef HI_S32 (*PFN_HI_UNF_DISP_DeInit)(HI_VOID);
+typedef HI_S32 (*PFN_HI_UNF_DISP_Open)(HI_U32 enDisp);
+typedef HI_S32 (*PFN_HI_UNF_DISP_AcquireSnapshot)(HI_U32 enDisp, HI_UNF_VIDEO_FRAME_INFO_S *pstSnapShot);
+typedef HI_S32 (*PFN_HI_UNF_DISP_ReleaseSnapshot)(HI_U32 enDisp, const HI_UNF_VIDEO_FRAME_INFO_S *pstSnapShot);
+typedef HI_S32 (*PFN_HI_UNF_VO_Init)(HI_U32 enDevMode);
+typedef HI_S32 (*PFN_HI_UNF_VO_DeInit)(HI_VOID);
+typedef HI_S32 (*PFN_HI_UNF_VO_CapturePicture)(HI_HANDLE hWin, HI_UNF_3716_CAPTURE_INFO_S *pstCapPicture);
+typedef HI_S32 (*PFN_HI_UNF_VO_CapturePictureRelease)(HI_HANDLE hWin, const HI_UNF_3716_CAPTURE_INFO_S *pstCapPicture);
+typedef HI_S32 (*PFN_HI_MPI_WIN_GetHandle)(WIN_GET_HANDLE_S *pstWinHandle);
+typedef HI_U32 (*PFN_HI_MMZ_New)(HI_U32 u32Size, HI_U32 u32Align, HI_VOID *pszZoneName, const char *pszMmbName);
+typedef HI_S32 (*PFN_HI_MMZ_Delete)(HI_U32 u32PhyAddr);
+typedef void*  (*PFN_HI_MMZ_Map)(HI_U32 u32PhyAddr, HI_U32 u32Cached);
+typedef HI_S32 (*PFN_HI_MMZ_Unmap)(HI_U32 u32PhyAddr);
+typedef HI_S32 (*PFN_HI_TDE2_Open)(HI_VOID);
+typedef HI_S32 (*PFN_HI_TDE2_Close)(HI_VOID);
+typedef HI_S32 (*PFN_HI_TDE2_BeginJob)(HI_VOID);
+typedef HI_S32 (*PFN_HI_TDE2_EndJob)(HI_S32 s32Handle, HI_U32 bSync, HI_U32 bBlock, HI_U32 u32TimeOut);
+typedef HI_S32 (*PFN_HI_TDE2_MbBlit)(HI_S32 s32Handle, const HI_TDE2_MB_S *pstMB, const HI_TDE2_RECT_S *pstMBRect,
+							 const HI_TDE2_SURFACE_S *pstDst, const HI_TDE2_RECT_S *pstDstRect, const HI_TDE2_MBOPT_S *pstOpt);
+
+static void hisi_preload_one(const char *name)
+{
+	void *h;
+	if (!name || !*name)
+		return;
+	h = dlopen(name, RTLD_LAZY | RTLD_GLOBAL);
+	(void)h;
+}
+
+static void hisi_preload_runtime_libs(void)
+{
+	/* libhi_msp on 3716mv410/mv430 may depend on the JPEG/HIGO stack when loaded directly. */
+	static const char *libs[] = {
+		"libjpeg.so", "libjpeg.so.8", "libjpeg.so.62", "libjpeg9b.so",
+		"/usr/lib/libjpeg.so", "/usr/lib/libjpeg.so.8", "/usr/lib/libjpeg.so.62", "/usr/lib/libjpeg9b.so",
+		"libz.so.1", "libpng16.so.16", "libatomic.so.1",
+		"/usr/lib/libhi_securec.so", "/usr/lib/libhigo.so", "/usr/lib/libhigoadp.so",
+		"/usr/lib/libhi_so.so", "/usr/lib/libhi_ttx.so", "/usr/lib/libhi_cc.so",
+		"/usr/lib/libhi_subtitle.so",
+		NULL
+	};
+	int i;
+	for (i = 0; libs[i]; i++)
+		hisi_preload_one(libs[i]);
+}
+
+static void *hisi_sym(void *preferred, void *fallback, const char *name)
+{
+	void *p = NULL;
+	if (preferred)
+		p = dlsym(preferred, name);
+	if (!p && fallback)
+		p = dlsym(fallback, name);
+	return p;
+}
+
+/*
+ * Some 3798 images ship /usr/lib/libhi_msp.so with PT_GNU_STACK marked
+ * executable (RWE).  Loading that library through dlopen() can fail on the
+ * running OpenATV kernel with:
+ *   cannot enable executable stack as shared object requires: Invalid argument
+ * The vendor grab has libhi_msp.so in DT_NEEDED and therefore does not hit the
+ * late-dlopen path.  For aio-grab keep the generic dlopen design, but if this
+ * exact failure happens, create a private /tmp copy of libhi_msp.so and clear
+ * PF_X from its PT_GNU_STACK header before dlopen().  No code segment is
+ * changed; only the stack permission request in the ELF program header is
+ * relaxed.
+ */
+static int hisi_copy_file(int in, int out)
+{
+	char buf[16384];
+	ssize_t rd;
+	while ((rd = read(in, buf, sizeof(buf))) > 0) {
+		char *p = buf;
+		ssize_t left = rd;
+		while (left > 0) {
+			ssize_t wr = write(out, p, (size_t)left);
+			if (wr <= 0)
+				return -1;
+			p += wr;
+			left -= wr;
+		}
+	}
+	return rd == 0 ? 0 : -1;
+}
+
+static int hisi_clear_elf32_execstack(const char *path)
+{
+	int fd = -1;
+	Elf32_Ehdr eh;
+	int i;
+
+	fd = open(path, O_RDWR);
+	if (fd < 0)
+		return -1;
+
+	if (read(fd, &eh, sizeof(eh)) != (ssize_t)sizeof(eh)) {
+		close(fd);
+		return -1;
+	}
+
+	if (memcmp(eh.e_ident, ELFMAG, SELFMAG) != 0 ||
+		eh.e_ident[EI_CLASS] != ELFCLASS32 ||
+		eh.e_ident[EI_DATA] != ELFDATA2LSB ||
+		eh.e_phoff == 0 || eh.e_phentsize != sizeof(Elf32_Phdr) || eh.e_phnum == 0) {
+		close(fd);
+		return -1;
+	}
+
+	for (i = 0; i < eh.e_phnum; i++) {
+		Elf32_Phdr ph;
+		off_t off = (off_t)eh.e_phoff + (off_t)i * (off_t)eh.e_phentsize;
+		if (lseek(fd, off, SEEK_SET) < 0 || read(fd, &ph, sizeof(ph)) != (ssize_t)sizeof(ph)) {
+			close(fd);
+			return -1;
+		}
+		if (ph.p_type == PT_GNU_STACK) {
+			if (ph.p_flags & PF_X) {
+				ph.p_flags &= ~PF_X;
+				if (lseek(fd, off, SEEK_SET) < 0 || write(fd, &ph, sizeof(ph)) != (ssize_t)sizeof(ph)) {
+					close(fd);
+					return -1;
+				}
+			}
+			close(fd);
+			return 0;
+		}
+	}
+
+	close(fd);
+	return -1;
+}
+
+static int hisi_make_noexecstack_copy(const char *src, char *dst, size_t dst_len)
+{
+	int in = -1, out = -1;
+	mode_t old_umask;
+
+	if (!src || !dst || dst_len < 32 || src[0] != '/')
+		return -1;
+
+	snprintf(dst, dst_len, "/tmp/aio-grab-libhi_msp-nx-%ld.so", (long)getpid());
+
+	in = open(src, O_RDONLY);
+	if (in < 0)
+		return -1;
+
+	old_umask = umask(022);
+	out = open(dst, O_WRONLY | O_CREAT | O_TRUNC, 0755);
+	umask(old_umask);
+	if (out < 0) {
+		close(in);
+		return -1;
+	}
+
+	if (hisi_copy_file(in, out) < 0) {
+		close(in);
+		close(out);
+		unlink(dst);
+		return -1;
+	}
+	close(in);
+	if (close(out) < 0) {
+		unlink(dst);
+		return -1;
+	}
+
+	if (hisi_clear_elf32_execstack(dst) < 0) {
+		unlink(dst);
+		return -1;
+	}
 
 	return 0;
+}
+
+static void *hisi_dlopen_msp_with_execstack_fallback(const char *path)
+{
+	void *h;
+	const char *err;
+	char nx_path[256];
+
+	if (!path || !*path)
+		return NULL;
+
+	h = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+	if (h)
+		return h;
+
+	err = dlerror();
+	if (!err)
+		return NULL;
+
+	if (strstr(err, "executable stack") == NULL &&
+		strstr(err, "cannot enable executable") == NULL) {
+		return NULL;
+	}
+
+	if (!quiet)
+		fprintf(stderr, "getvideo_hisi: %s needs executable stack, trying private noexecstack copy\n", path);
+
+	if (hisi_make_noexecstack_copy(path, nx_path, sizeof(nx_path)) < 0) {
+		if (!quiet)
+			fprintf(stderr, "getvideo_hisi: could not create noexecstack copy of %s: %s\n", path, strerror(errno));
+		return NULL;
+	}
+
+	h = dlopen(nx_path, RTLD_NOW | RTLD_GLOBAL);
+	if (!h) {
+		if (!quiet)
+			fprintf(stderr, "getvideo_hisi: dlopen noexecstack copy failed: %s\n", dlerror());
+		unlink(nx_path);
+		return NULL;
+	}
+
+	unlink(nx_path);
+
+	return h;
+}
+
+static int hisi_uses_chip_backend(void)
+{
+	switch (stb_type) {
+	case HISI_3716MV410:
+	case HISI_3716MV430:
+	case HISI_3798CV200:
+	case HISI_3798MV200:
+	case HISI_3798MV300:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static int hisi_uses_composited_snapshot(void)
+{
+	return stb_type == HISI_3798MV200 || stb_type == HISI_3798MV300;
+}
+
+static int hisi_get_fb_size(int *w, int *h)
+{
+	int fd;
+	struct fb_var_screeninfo var;
+	if (!w || !h)
+		return -1;
+	*w = 0;
+	*h = 0;
+	fd = open("/dev/fb0", O_RDONLY);
+	if (fd < 0)
+		fd = open("/dev/fb/0", O_RDONLY);
+	if (fd < 0)
+		return -1;
+	memset(&var, 0, sizeof(var));
+	if (ioctl(fd, FBIOGET_VSCREENINFO, &var) < 0) {
+		close(fd);
+		return -1;
+	}
+	close(fd);
+	if (!var.xres || !var.yres)
+		return -1;
+	*w = (int)var.xres;
+	*h = (int)var.yres;
+	return 0;
+}
+
+static int hisi_open_libs(void)
+{
+	if (hisi_lib_common && hisi_lib_msp)
+		return 0;
+
+	hisi_preload_runtime_libs();
+
+	hisi_lib_common = dlopen("/usr/lib/libhi_common.so", RTLD_NOW | RTLD_GLOBAL);
+	if (!hisi_lib_common) {
+		fprintf(stderr, "getvideo_hisi: dlopen libhi_common.so failed: %s\n", dlerror());
+		return -1;
+	}
+
+	hisi_lib_msp = hisi_dlopen_msp_with_execstack_fallback("/usr/lib/libhi_msp.so");
+	if (!hisi_lib_msp)
+		hisi_lib_msp = dlopen("libhi_msp.so", RTLD_NOW | RTLD_GLOBAL);
+	if (!hisi_lib_msp) {
+		fprintf(stderr, "getvideo_hisi: dlopen libhi_msp.so failed: %s\n", dlerror());
+		return -1;
+	}
+	return 0;
+}
+
+static void getvideo_hisi_snapshot(unsigned char *video, int *xres, int *yres)
+{
+	HI_S32 ret;
+	HI_U32 display = HI_UNF_DISPLAY1;
+
+	*xres = 0;
+	*yres = 0;
+
+	if (hisi_open_libs() < 0)
+		return;
+
+	/* Resolve symbols */
+	PFN_HI_SYS_Init              pfnSysInit    = (PFN_HI_SYS_Init)dlsym(hisi_lib_common, "HI_SYS_Init");
+	PFN_HI_SYS_DeInit            pfnSysDeInit  = (PFN_HI_SYS_DeInit)dlsym(hisi_lib_common, "HI_SYS_DeInit");
+	PFN_HI_UNF_DISP_Init         pfnDispInit   = (PFN_HI_UNF_DISP_Init)dlsym(hisi_lib_msp,    "HI_UNF_DISP_Init");
+	PFN_HI_UNF_DISP_Open         pfnDispOpen   = (PFN_HI_UNF_DISP_Open)dlsym(hisi_lib_msp,    "HI_UNF_DISP_Open");
+	PFN_HI_UNF_DISP_AcquireSnapshot pfnAcquire = (PFN_HI_UNF_DISP_AcquireSnapshot)dlsym(hisi_lib_msp,    "HI_UNF_DISP_AcquireSnapshot");
+	PFN_HI_UNF_DISP_ReleaseSnapshot pfnRelease = (PFN_HI_UNF_DISP_ReleaseSnapshot)dlsym(hisi_lib_msp,    "HI_UNF_DISP_ReleaseSnapshot");
+	PFN_HI_MMZ_Map               pfnMMZMap     = (PFN_HI_MMZ_Map)hisi_sym(hisi_lib_common, hisi_lib_msp, "HI_MMZ_Map");
+	PFN_HI_MMZ_Unmap             pfnMMZUnmap   = (PFN_HI_MMZ_Unmap)hisi_sym(hisi_lib_common, hisi_lib_msp, "HI_MMZ_Unmap");
+
+	if (!pfnSysInit || !pfnDispInit || !pfnDispOpen ||
+		!pfnAcquire || !pfnRelease || !pfnMMZMap || !pfnMMZUnmap) {
+		fprintf(stderr, "getvideo_hisi: dlsym failed for 3798 snapshot functions\n");
+		return;
+	}
+
+	ret = pfnSysInit();
+	if (ret != HI_SUCCESS) {
+		fprintf(stderr, "getvideo_hisi: HI_SYS_Init failed: 0x%x\n", ret);
+		return;
+	}
+
+	ret = pfnDispInit();
+	if (ret != HI_SUCCESS) {
+		fprintf(stderr, "getvideo_hisi: HI_UNF_DISP_Init failed: 0x%x\n", ret);
+		goto cleanup_sys;
+	}
+
+	ret = pfnDispOpen(display);
+	if (ret != HI_SUCCESS) {
+		if (!quiet)
+			fprintf(stderr, "getvideo_hisi: HI_UNF_DISP_Open display=%u failed: 0x%x (ignoring)\n", display, ret);
+	}
+
+	HI_UNF_VIDEO_FRAME_INFO_S *pFrame = (HI_UNF_VIDEO_FRAME_INFO_S*)calloc(1, 4096);
+	if (!pFrame) {
+		fprintf(stderr, "getvideo_hisi: calloc failed\n");
+		goto cleanup_sys;
+	}
+
+	ret = pfnAcquire(display, pFrame);
+	if (ret != HI_SUCCESS) {
+		fprintf(stderr, "getvideo_hisi: HI_UNF_DISP_AcquireSnapshot display=%u failed: 0x%x\n", display, ret);
+		free(pFrame);
+		goto cleanup_sys;
+	}
+
+	if (!pFrame->u32Width || !pFrame->u32Height ||
+		!pFrame->u32YPhyAddr || !pFrame->u32CPhyAddr) {
+		fprintf(stderr, "getvideo_hisi: invalid frame info\n");
+		goto cleanup_snapshot;
+	}
+
+	unsigned char *y_virt  = (unsigned char*)pfnMMZMap(pFrame->u32YPhyAddr, 0);
+	if (!y_virt) {
+		fprintf(stderr, "getvideo_hisi: HI_MMZ_Map Y failed\n");
+		goto cleanup_snapshot;
+	}
+
+	int w       = (int)pFrame->u32Width;
+	int h       = (int)pFrame->u32Height;
+	int ystride = (int)pFrame->u32YStride;
+	int cstride = (int)pFrame->u32CStride;
+
+	/*
+	 * On some 3798 images the vendor grab calls HI_MMZ_Map only once with
+	 * u32YAddr.  u32CAddr is inside the same MMZ allocation and can be
+	 * non-page-aligned, so mapping u32CAddr separately may fail.
+	 * Keep the separate-map fallback for SDKs where Y and C are different MMBs.
+	 */
+	unsigned char *uv_virt = NULL;
+	int uv_mapped_separately = 0;
+	HI_U32 uv_offset = 0;
+	if (pFrame->u32CPhyAddr > pFrame->u32YPhyAddr) {
+		HI_U32 min_uv_offset = (HI_U32)ystride * (HI_U32)h;
+		uv_offset = pFrame->u32CPhyAddr - pFrame->u32YPhyAddr;
+		if (uv_offset >= min_uv_offset && uv_offset < (64U * 1024U * 1024U)) {
+			uv_virt = y_virt + uv_offset;
+			if (!quiet)
+				fprintf(stderr, "getvideo_hisi: using contiguous MMZ chroma offset 0x%x\n", uv_offset);
+		}
+	}
+
+	if (!uv_virt) {
+		uv_virt = (unsigned char*)pfnMMZMap(pFrame->u32CPhyAddr, 0);
+		uv_mapped_separately = 1;
+	}
+	if (!uv_virt) {
+		fprintf(stderr, "getvideo_hisi: HI_MMZ_Map UV failed y=0x%x c=0x%x\n",
+			pFrame->u32YPhyAddr, pFrame->u32CPhyAddr);
+		pfnMMZUnmap(pFrame->u32YPhyAddr);
+		goto cleanup_snapshot;
+	}
+
+	/* Convert NV21 (YUV420 semi-planar, V before U) to internal BGR. */
+	int i, j;
+	for (i = 0; i < h; i++) {
+		for (j = 0; j < w; j++) {
+			int y = y_virt[i * ystride + j];
+			int c0 = uv_virt[(i / 2) * cstride + (j & ~1)];
+			int c1 = uv_virt[(i / 2) * cstride + (j & ~1) + 1];
+			int v = c0;
+			int u = c1;
+
+			y -= 16;
+			u -= 128;
+			v -= 128;
+
+			int r = CLAMP((298 * y + 409 * v + 128) >> 8);
+			int g = CLAMP((298 * y - 100 * u - 208 * v + 128) >> 8);
+			int b = CLAMP((298 * y + 516 * u + 128) >> 8);
+
+			int off = (i * w + j) * 3;
+			video[off + 0] = (unsigned char)b;
+			video[off + 1] = (unsigned char)g;
+			video[off + 2] = (unsigned char)r;
+		}
+	}
+
+	*xres = w;
+	*yres = h;
+
+	if (uv_mapped_separately)
+		pfnMMZUnmap(pFrame->u32CPhyAddr);
+	pfnMMZUnmap(pFrame->u32YPhyAddr);
+
+cleanup_snapshot:
+	pfnRelease(display, pFrame);
+	free(pFrame);
+
+cleanup_sys:
+	if (pfnSysDeInit)
+		pfnSysDeInit();
+}
+
+
+/*
+ * 3716mv410 video backend.
+ *
+ * The old working mv410 grab binary does not use the mv430 WIN/VO/TDE path for
+ * "grab -v". Static analysis shows the video-only path executes:
+ *
+ *   rm -rf /home/capturevideo
+ *   mkdir /home/capturevideo
+ *   echo capture /home/capturevideo > /proc/msp/win0100
+ *
+ * Then it reads the created YUV420 planar dump from /home/capturevideo and
+ * parses width/height from the underscore-separated filename. Reimplement that
+ * path here and convert I420/YUV420p to aio-grab's internal BGR888 format.
+ */
+#define HISI_410_CAPTURE_DIR "/home/capturevideo"
+#define HISI_410_CAPTURE_CTL "/proc/msp/win0100"
+
+static int hisi_410_parse_dims_from_name(const char *name, off_t fsize, int *w, int *h)
+{
+	unsigned nums[16];
+	int n = 0;
+	const char *p = name;
+
+	*w = 0;
+	*h = 0;
+
+	while (*p && n < (int)(sizeof(nums) / sizeof(nums[0]))) {
+		while (*p && !isdigit((unsigned char)*p))
+			p++;
+		if (!*p)
+			break;
+		nums[n++] = (unsigned)strtoul(p, (char **)&p, 10);
+	}
+
+	for (int i = 0; i + 1 < n; i++) {
+		unsigned cw = nums[i];
+		unsigned ch = nums[i + 1];
+		if (cw < 320 || ch < 200 || cw > 3840 || ch > 2160)
+			continue;
+		if ((cw & 1) || (ch & 1))
+			continue;
+		if (fsize > 0 && (off_t)((cw * ch * 3U) / 2U) > fsize)
+			continue;
+		*w = (int)cw;
+		*h = (int)ch;
+		return 0;
+	}
+
+	/* Fallback for dumps where the filename does not carry dimensions. */
+	static const struct { int w, h; } known[] = {
+		{3840, 2160}, {1920, 1080}, {1280, 720}, {720, 576}, {720, 480}, {640, 480}
+	};
+	for (unsigned i = 0; i < sizeof(known) / sizeof(known[0]); i++) {
+		off_t need = (off_t)known[i].w * (off_t)known[i].h * 3 / 2;
+		if (need == fsize) {
+			*w = known[i].w;
+			*h = known[i].h;
+			return 0;
+		}
+	}
+
+	return -1;
+}
+
+static int hisi_410_find_capture_file(char *path, size_t path_len, int *w, int *h, off_t *need)
+{
+	DIR *dir;
+	struct dirent *de;
+	struct stat st;
+	char candidate[512];
+
+	if (!path || path_len == 0 || !w || !h || !need)
+		return -1;
+
+	path[0] = 0;
+	*w = 0;
+	*h = 0;
+	*need = 0;
+
+	dir = opendir(HISI_410_CAPTURE_DIR);
+	if (!dir)
+		return -1;
+
+	while ((de = readdir(dir)) != NULL) {
+		if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, ".."))
+			continue;
+		snprintf(candidate, sizeof(candidate), "%s/%s", HISI_410_CAPTURE_DIR, de->d_name);
+		if (stat(candidate, &st) < 0 || !S_ISREG(st.st_mode))
+			continue;
+		if (hisi_410_parse_dims_from_name(de->d_name, st.st_size, w, h) < 0)
+			continue;
+		*need = (off_t)(*w) * (off_t)(*h) * 3 / 2;
+		if (*need <= 0 || st.st_size < *need)
+			continue;
+		snprintf(path, path_len, "%s", candidate);
+		closedir(dir);
+		return 0;
+	}
+
+	closedir(dir);
+	return -1;
+}
+
+static int hisi_410_read_file(const char *path, unsigned char *buf, size_t len)
+{
+	FILE *fp = fopen(path, "rb");
+	if (!fp)
+		return -1;
+	size_t got = fread(buf, 1, len, fp);
+	fclose(fp);
+	return got == len ? 0 : -1;
+}
+
+static void hisi_410_i420_to_bgr(const unsigned char *yuv, unsigned char *bgr, int w, int h)
+{
+	const size_t y_size = (size_t)w * (size_t)h;
+	const size_t c_size = y_size / 4U;
+	const unsigned char *y_plane = yuv;
+	const unsigned char *u_plane = yuv + y_size;
+	const unsigned char *v_plane = yuv + y_size + c_size;
+
+	for (int yy = 0; yy < h; yy++) {
+		for (int xx = 0; xx < w; xx++) {
+			int y = y_plane[(size_t)yy * (size_t)w + (size_t)xx];
+			int u = u_plane[(size_t)(yy / 2) * (size_t)(w / 2) + (size_t)(xx / 2)];
+			int v = v_plane[(size_t)(yy / 2) * (size_t)(w / 2) + (size_t)(xx / 2)];
+
+			y -= 16;
+			u -= 128;
+			v -= 128;
+
+			int r = CLAMP((298 * y + 409 * v + 128) >> 8);
+			int g = CLAMP((298 * y - 100 * u - 208 * v + 128) >> 8);
+			int b = CLAMP((298 * y + 516 * u + 128) >> 8);
+
+			size_t off = ((size_t)yy * (size_t)w + (size_t)xx) * 3U;
+			bgr[off + 0] = (unsigned char)b;
+			bgr[off + 1] = (unsigned char)g;
+			bgr[off + 2] = (unsigned char)r;
+		}
+	}
+}
+
+static int getvideo_hisi_3716mv410_procfs(unsigned char *video, int *xres, int *yres)
+{
+	char capfile[512];
+	int w = 0, h = 0;
+	off_t need = 0;
+	unsigned char *yuv = NULL;
+	FILE *ctl;
+	int ret = -1;
+
+	*xres = 0;
+	*yres = 0;
+	capfile[0] = 0;
+
+	if (access(HISI_410_CAPTURE_CTL, W_OK) != 0) {
+		if (!quiet)
+			fprintf(stderr, "getvideo_hisi_3716mv410: %s not writable: %s\n", HISI_410_CAPTURE_CTL, strerror(errno));
+		return -1;
+	}
+
+	system("rm -rf " HISI_410_CAPTURE_DIR);
+	if (mkdir(HISI_410_CAPTURE_DIR, 0755) < 0 && errno != EEXIST) {
+		fprintf(stderr, "getvideo_hisi_3716mv410: mkdir %s failed: %s\n", HISI_410_CAPTURE_DIR, strerror(errno));
+		return -1;
+	}
+
+	ctl = fopen(HISI_410_CAPTURE_CTL, "w");
+	if (!ctl) {
+		fprintf(stderr, "getvideo_hisi_3716mv410: open %s failed: %s\n", HISI_410_CAPTURE_CTL, strerror(errno));
+		return -1;
+	}
+	fprintf(ctl, "capture %s\n", HISI_410_CAPTURE_DIR);
+	fclose(ctl);
+
+	/* The procfs capture is synchronous on the old grab, but give the driver a
+	 * short window so slower storage/filesystems do not race our directory scan. */
+	for (int tries = 0; tries < 20; tries++) {
+		if (hisi_410_find_capture_file(capfile, sizeof(capfile), &w, &h, &need) == 0)
+			break;
+		usleep(50000);
+	}
+
+	if (!w || !h || need <= 0 || !capfile[0]) {
+		fprintf(stderr, "getvideo_hisi_3716mv410: no usable capture file in %s\n", HISI_410_CAPTURE_DIR);
+		goto out;
+	}
+
+	yuv = (unsigned char *)malloc((size_t)need);
+	if (!yuv) {
+		fprintf(stderr, "getvideo_hisi_3716mv410: malloc failed size=%ld\n", (long)need);
+		goto out;
+	}
+
+	if (hisi_410_read_file(capfile, yuv, (size_t)need) < 0) {
+		fprintf(stderr, "getvideo_hisi_3716mv410: read %s failed\n", capfile);
+		goto out;
+	}
+
+	hisi_410_i420_to_bgr(yuv, video, w, h);
+	*xres = w;
+	*yres = h;
+	ret = 0;
+
+out:
+	free(yuv);
+	system("rm -rf " HISI_410_CAPTURE_DIR);
+	return ret;
+}
+
+static void getvideo_hisi_3716vo(unsigned char *video, int *xres, int *yres)
+{
+	HI_S32 ret;
+	HI_S32 job = -1;
+	HI_HANDLE hWin = 0;
+	HI_U32 dstPhys = 0;
+	unsigned char *dstVirt = NULL;
+	int tde_opened = 0;
+	int captured = 0;
+	int out_w = 0, out_h = 0;
+	int i;
+
+	*xres = 0;
+	*yres = 0;
+
+	if (hisi_open_libs() < 0)
+		return;
+
+	PFN_HI_SYS_Init    pfnSysInit    = (PFN_HI_SYS_Init)dlsym(hisi_lib_common, "HI_SYS_Init");
+	PFN_HI_SYS_DeInit  pfnSysDeInit  = (PFN_HI_SYS_DeInit)dlsym(hisi_lib_common, "HI_SYS_DeInit");
+	PFN_HI_UNF_DISP_Init   pfnDispInit   = (PFN_HI_UNF_DISP_Init)dlsym(hisi_lib_msp, "HI_UNF_DISP_Init");
+	PFN_HI_UNF_DISP_DeInit pfnDispDeInit = (PFN_HI_UNF_DISP_DeInit)dlsym(hisi_lib_msp, "HI_UNF_DISP_DeInit");
+	PFN_HI_UNF_VO_Init     pfnVoInit     = (PFN_HI_UNF_VO_Init)dlsym(hisi_lib_msp, "HI_UNF_VO_Init");
+	PFN_HI_UNF_VO_DeInit   pfnVoDeInit   = (PFN_HI_UNF_VO_DeInit)dlsym(hisi_lib_msp, "HI_UNF_VO_DeInit");
+	PFN_HI_MPI_WIN_GetHandle pfnGetHandle = (PFN_HI_MPI_WIN_GetHandle)dlsym(hisi_lib_msp, "HI_MPI_WIN_GetHandle");
+	PFN_HI_UNF_VO_CapturePicture pfnCapture = (PFN_HI_UNF_VO_CapturePicture)dlsym(hisi_lib_msp, "HI_UNF_VO_CapturePicture");
+	PFN_HI_UNF_VO_CapturePictureRelease pfnRelease = (PFN_HI_UNF_VO_CapturePictureRelease)dlsym(hisi_lib_msp, "HI_UNF_VO_CapturePictureRelease");
+	PFN_HI_MMZ_New    pfnMMZNew    = (PFN_HI_MMZ_New)hisi_sym(hisi_lib_common, hisi_lib_msp, "HI_MMZ_New");
+	PFN_HI_MMZ_Delete pfnMMZDelete = (PFN_HI_MMZ_Delete)hisi_sym(hisi_lib_common, hisi_lib_msp, "HI_MMZ_Delete");
+	PFN_HI_MMZ_Map    pfnMMZMap    = (PFN_HI_MMZ_Map)hisi_sym(hisi_lib_common, hisi_lib_msp, "HI_MMZ_Map");
+	PFN_HI_MMZ_Unmap  pfnMMZUnmap  = (PFN_HI_MMZ_Unmap)hisi_sym(hisi_lib_common, hisi_lib_msp, "HI_MMZ_Unmap");
+	PFN_HI_TDE2_Open     pfnTdeOpen     = (PFN_HI_TDE2_Open)dlsym(hisi_lib_msp, "HI_TDE2_Open");
+	PFN_HI_TDE2_Close    pfnTdeClose    = (PFN_HI_TDE2_Close)dlsym(hisi_lib_msp, "HI_TDE2_Close");
+	PFN_HI_TDE2_BeginJob pfnTdeBeginJob = (PFN_HI_TDE2_BeginJob)dlsym(hisi_lib_msp, "HI_TDE2_BeginJob");
+	PFN_HI_TDE2_EndJob   pfnTdeEndJob   = (PFN_HI_TDE2_EndJob)dlsym(hisi_lib_msp, "HI_TDE2_EndJob");
+	PFN_HI_TDE2_MbBlit   pfnTdeMbBlit   = (PFN_HI_TDE2_MbBlit)dlsym(hisi_lib_msp, "HI_TDE2_MbBlit");
+
+	if (!pfnSysInit || !pfnDispInit || !pfnVoInit || !pfnGetHandle ||
+		!pfnCapture || !pfnRelease || !pfnMMZNew || !pfnMMZDelete ||
+		!pfnMMZMap || !pfnMMZUnmap || !pfnTdeOpen || !pfnTdeClose ||
+		!pfnTdeBeginJob || !pfnTdeEndJob || !pfnTdeMbBlit) {
+		fprintf(stderr, "getvideo_hisi_3716vo: dlsym failed for VO/TDE functions\n");
+		return;
+	}
+
+	ret = pfnSysInit();
+	if (ret != HI_SUCCESS) {
+		fprintf(stderr, "getvideo_hisi_3716vo: HI_SYS_Init failed: 0x%x\n", ret);
+		return;
+	}
+
+	ret = pfnDispInit();
+	if (ret != HI_SUCCESS) {
+		fprintf(stderr, "getvideo_hisi_3716vo: HI_UNF_DISP_Init failed: 0x%x\n", ret);
+		goto cleanup_sys;
+	}
+
+	ret = pfnVoInit(HI_UNF_VO_DEV_MODE_NORMAL);
+	if (ret != HI_SUCCESS) {
+		fprintf(stderr, "getvideo_hisi_3716vo: HI_UNF_VO_Init failed: 0x%x\n", ret);
+		goto cleanup_disp;
+	}
+
+	WIN_GET_HANDLE_S winInfo;
+	memset(&winInfo, 0, sizeof(winInfo));
+	winInfo.enDisp = HI_DRV_DISPLAY_1;
+	ret = pfnGetHandle(&winInfo);
+	if (ret != HI_SUCCESS || winInfo.u32WinNumber == 0 || !winInfo.ahWinHandle[0]) {
+		fprintf(stderr, "getvideo_hisi_3716vo: HI_MPI_WIN_GetHandle failed: 0x%x winNumber=%u hWin0=0x%x\n",
+			ret, winInfo.u32WinNumber, winInfo.ahWinHandle[0]);
+		goto cleanup_vo;
+	}
+	hWin = winInfo.ahWinHandle[0];
+
+	HI_UNF_3716_CAPTURE_INFO_S *cap = (HI_UNF_3716_CAPTURE_INFO_S*)calloc(1, 4096);
+	if (!cap) {
+		fprintf(stderr, "getvideo_hisi_3716vo: calloc failed\n");
+		goto cleanup_vo;
+	}
+
+	ret = pfnCapture(hWin, cap);
+	if (ret != HI_SUCCESS) {
+		fprintf(stderr, "getvideo_hisi_3716vo: HI_UNF_VO_CapturePicture failed: 0x%x\n", ret);
+		free(cap);
+		goto cleanup_vo;
+	}
+	captured = 1;
+
+	/*
+	 * HI_UNF_VO_CapturePicture returns the public UNF layout used by the old
+	 * grab binary: Y=0x04, C=0x08, stride=0x10, size=0x34/0x38.
+	 * Some hooks see the internal MPI layout before the UNF wrapper copies it,
+	 * so keep a fallback for Y=0x0c, C=0x20, stride=0x18/0x30, size=0x11c.
+	 */
+	HI_U32 capYPhy    = cap->u32YPhyAddr;
+	HI_U32 capCPhy    = cap->u32CPhyAddr;
+	HI_U32 capYStride = cap->u32YStride;
+	HI_U32 capCStride = cap->u32CStride ? cap->u32CStride : cap->u32YStride;
+	HI_U32 capW       = cap->u32Width;
+	HI_U32 capH       = cap->u32Height;
+
+	if (!capYPhy || !capCPhy || !capYStride || !capW || !capH || capW > 3840 || capH > 2160) {
+		HI_U32 *raw = (HI_U32*)cap;
+		HI_U32 w2 = raw[0x11c / 4];
+		HI_U32 h2 = raw[0x120 / 4];
+		if (!w2 || !h2 || w2 > 3840 || h2 > 2160) {
+			w2 = raw[0x1a0 / 4];
+			h2 = raw[0x1a4 / 4];
+		}
+		if (raw[0x00c / 4] && raw[0x020 / 4] && raw[0x018 / 4] &&
+			w2 && h2 && w2 <= 3840 && h2 <= 2160) {
+			capYPhy    = raw[0x00c / 4];
+			capCPhy    = raw[0x020 / 4];
+			capYStride = raw[0x018 / 4];
+			capCStride = raw[0x030 / 4] ? raw[0x030 / 4] : raw[0x018 / 4];
+			capW       = w2;
+			capH       = h2;
+		}
+	}
+
+	if (!capYPhy || !capCPhy || !capYStride || !capW || !capH || capW > 3840 || capH > 2160) {
+		fprintf(stderr, "getvideo_hisi_3716vo: invalid capture info y=0x%x c=0x%x stride=%u/%u size=%ux%u\n",
+			capYPhy, capCPhy, capYStride, capCStride, capW, capH);
+		goto cleanup_capture;
+	}
+
+	if (hisi_get_fb_size(&out_w, &out_h) < 0 || out_w <= 0 || out_h <= 0) {
+		out_w = (int)capW;
+		out_h = (int)capH;
+	}
+
+	if (out_w <= 0 || out_h <= 0 || out_w > 1920 || out_h > 1080) {
+		fprintf(stderr, "getvideo_hisi_3716vo: refusing invalid output size %dx%d\n", out_w, out_h);
+		goto cleanup_capture;
+	}
+
+	int dstStride = out_w * 3;
+	HI_U32 dstSize = (HI_U32)(dstStride * out_h);
+	dstPhys = pfnMMZNew(dstSize, 0x40, NULL, "aio_grab_3716_rgb");
+	if (!dstPhys) {
+		fprintf(stderr, "getvideo_hisi_3716vo: HI_MMZ_New failed size=0x%x\n", dstSize);
+		goto cleanup_capture;
+	}
+
+	HI_TDE2_MB_S mb;
+	HI_TDE2_RECT_S mbRect;
+	HI_TDE2_SURFACE_S dst;
+	HI_TDE2_RECT_S dstRect;
+	HI_TDE2_MBOPT_S opt;
+	memset(&mb, 0, sizeof(mb));
+	memset(&mbRect, 0, sizeof(mbRect));
+	memset(&dst, 0, sizeof(dst));
+	memset(&dstRect, 0, sizeof(dstRect));
+	memset(&opt, 0, sizeof(opt));
+
+	mb.enColorFmt     = HISI_TDE_COLOR_FMT_YCBCR420MBP;
+	mb.u32YPhyAddr    = capYPhy;
+	mb.u32Width       = capW;
+	mb.u32Height      = capH;
+	mb.u32YStride     = capYStride;
+	mb.u32CbCrPhyAddr = capCPhy;
+	mb.u32CbCrStride  = capCStride ? capCStride : capYStride;
+
+	mbRect.s32Xpos    = 0;
+	mbRect.s32Ypos    = 0;
+	mbRect.u32Width   = capW;
+	mbRect.u32Height  = capH;
+
+	dst.u32PhyAddr    = dstPhys;
+	dst.enColorFmt    = HISI_TDE_COLOR_FMT_BGR888;
+	dst.u32Height     = (HI_U32)out_h;
+	dst.u32Width      = (HI_U32)out_w;
+	dst.u32Stride     = (HI_U32)dstStride;
+	dst.bAlphaMax255  = 1;
+	dst.bAlphaExt1555 = 1;
+	dst.bYCbCrClut    = 0;
+	dst.u8Alpha0      = 0xff;
+
+	dstRect.s32Xpos   = 0;
+	dstRect.s32Ypos   = 0;
+	dstRect.u32Width  = (HI_U32)out_w;
+	dstRect.u32Height = (HI_U32)out_h;
+
+	opt.u32Word[5] = 1;
+	opt.u32Word[6] = 3;
+
+	ret = pfnTdeOpen();
+	if (ret != HI_SUCCESS) {
+		fprintf(stderr, "getvideo_hisi_3716vo: HI_TDE2_Open failed: 0x%x\n", ret);
+		goto cleanup_capture;
+	}
+	tde_opened = 1;
+
+	job = pfnTdeBeginJob();
+	if (job < 0) {
+		fprintf(stderr, "getvideo_hisi_3716vo: HI_TDE2_BeginJob failed: 0x%x\n", job);
+		goto cleanup_capture;
+	}
+
+	ret = pfnTdeMbBlit(job, &mb, &mbRect, &dst, &dstRect, &opt);
+	if (ret != HI_SUCCESS) {
+		fprintf(stderr, "getvideo_hisi_3716vo: HI_TDE2_MbBlit failed: 0x%x\n", ret);
+		goto cleanup_capture;
+	}
+
+	ret = pfnTdeEndJob(job, 1, 1, 1000);
+	job = -1;
+	if (ret != HI_SUCCESS) {
+		fprintf(stderr, "getvideo_hisi_3716vo: HI_TDE2_EndJob failed: 0x%x\n", ret);
+		goto cleanup_capture;
+	}
+
+	dstVirt = (unsigned char*)pfnMMZMap(dstPhys, 0);
+	if (!dstVirt) {
+		fprintf(stderr, "getvideo_hisi_3716vo: HI_MMZ_Map dst failed\n");
+		goto cleanup_capture;
+	}
+
+	/* TDE destination is BGR888; aio-grab's JPEG path expects RGB order here. */
+	for (i = 0; i < out_w * out_h; i++) {
+		video[i * 3 + 0] = dstVirt[i * 3 + 2];
+		video[i * 3 + 1] = dstVirt[i * 3 + 1];
+		video[i * 3 + 2] = dstVirt[i * 3 + 0];
+	}
+
+	*xres = out_w;
+	*yres = out_h;
+
+cleanup_capture:
+	if (dstVirt)
+		pfnMMZUnmap(dstPhys);
+	if (tde_opened)
+		pfnTdeClose();
+	if (captured)
+		pfnRelease(hWin, cap);
+	if (dstPhys)
+		pfnMMZDelete(dstPhys);
+	free(cap);
+
+cleanup_vo:
+	if (pfnVoDeInit)
+		pfnVoDeInit();
+cleanup_disp:
+	if (pfnDispDeInit)
+		pfnDispDeInit();
+cleanup_sys:
+	if (pfnSysDeInit)
+		pfnSysDeInit();
+}
+
+void getvideo_hisi(unsigned char *video, int *xres, int *yres)
+{
+	switch (stb_type) {
+	case HISI_3716MV410:
+		if (getvideo_hisi_3716mv410_procfs(video, xres, yres) == 0)
+			return;
+		if (!quiet)
+			fprintf(stderr, "getvideo_hisi: 3716mv410 procfs capture failed, trying DISP snapshot fallback\n");
+		getvideo_hisi_snapshot(video, xres, yres);
+		return;
+
+	case HISI_3716MV430:
+		getvideo_hisi_3716vo(video, xres, yres);
+		return;
+
+	case HISI_3798MV200:
+	case HISI_3798MV300:
+		if (hisi_grab_request_video_only) {
+			if (!quiet)
+				fprintf(stderr, "HiSi 3798: using VO CapturePicture for real video-only\n");
+			getvideo_hisi_3716vo(video, xres, yres);
+			if (*xres > 0 && *yres > 0)
+				return;
+			if (!quiet)
+				fprintf(stderr, "HiSi 3798: VO CapturePicture failed, falling back to DISP snapshot; result may contain OSD\n");
+		}
+		getvideo_hisi_snapshot(video, xres, yres);
+		return;
+
+	case HISI_3798CV200:
+		getvideo_hisi_snapshot(video, xres, yres);
+		return;
+
+	default:
+		*xres = 0;
+		*yres = 0;
+		if (!quiet)
+			fprintf(stderr, "getvideo_hisi: unsupported HiSilicon stb_type=%d\n", stb_type);
+		return;
+	}
 }
 
 // grabing the video picture
@@ -2738,25 +3916,25 @@ void smooth_resize(const unsigned char *source, unsigned char *dest, int xsource
 // "nearest neighbor" pixmap resizing
 void fast_resize(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors)
 {
-	const int x_ratio = (int)((xsource<<16)/xdest) ;
-	const int y_ratio = (int)((ysource<<16)/ydest) ;
-	int i;
+    const int x_ratio = (int)((xsource<<16)/xdest);
+    const int y_ratio = (int)((ysource<<16)/ydest);
+    int i;
 	#pragma omp parallel for shared (dest, source)
-	for (i=0; i<ydest; i++)
-	{
-		int y2_xsource = ((i*y_ratio)>>16)*xsource; // do some precalculations
-		int i_xdest = i*xdest;
-		int j;
-		for (j=0; j<xdest; j++)
-		{
-			int x2 = ((j*x_ratio)>>16) ;
-			int y2_x2_colors = (y2_xsource+x2)*colors;
-			int i_x_colors = (i_xdest+j)*colors;
-			int c;
-			for (c=0; c<colors; c++)
-				dest[i_x_colors + c] = source[y2_x2_colors + c] ;
-		}
-	}
+    for (i=0; i<ydest; i++)
+    {
+        int y2_xsource = ((i*y_ratio)>>16)*xsource;
+        int i_xdest = i*xdest;
+        int j;
+        for (j=0; j<xdest; j++)
+        {
+            int x2 = ((j*x_ratio)>>16);
+            int y2_x2_colors = (y2_xsource+x2)*colors;
+            int i_x_colors = (i_xdest+j)*colors;
+            int c;
+            for (c=0; c<colors; c++)
+                dest[i_x_colors + c] = source[y2_x2_colors + c];
+        }
+    }
 }
 
 // combining pixmaps by using an alphamap
