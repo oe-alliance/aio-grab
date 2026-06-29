@@ -38,6 +38,9 @@ Feel free to use the code for your own projects. See LICENSE file for details.
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/un.h>
+#include <sys/wait.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <linux/types.h>
 #include <linux/fb.h>
 #include <sys/stat.h>
@@ -166,11 +169,24 @@ void fast_resize(const unsigned char *source, unsigned char *dest, int xsource, 
 void (*resize)(const unsigned char *source, unsigned char *dest, int xsource, int ysource, int xdest, int ydest, int colors);
 void combine(unsigned char *output, const unsigned char *video, const unsigned char *osd, int vleft, int vtop, int vwidth, int vheight, int xres, int yres);
 
+static int grab_ffmpeg_backend_should_autouse(int *src_w, int *src_h);
+static int grab_ffmpeg_snapshot(const char *filename, int video_only, int osd_only, int width, int use_png, int use_jpg, int jpg_quality, const char *input_override);
+static int grab_ffmpeg_getvideo_frame(unsigned char *video, int *xres, int *yres, int width, const char *input_override);
+
 #if !defined(__sh__)
 static enum {UNKNOWN, DMNEW, WETEK, AZBOX863x, AZBOX865x, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7251, BRCM7252, BRCM7252S, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7444, BRCM7552, BRCM7581, BRCM7583, BRCM7584, BRCM72604VU, BRCM72604, BRCM7278, BRCM75845, BRCM7366, BRCM73625, BRCM73565, BRCM7439DAGS, BRCM7439, HISIL_ARM, HISI_3716MV410, HISI_3716MV430, HISI_3798CV200, HISI_3798MV200, HISI_3798MV300} stb_type = UNKNOWN;
 #else
 static enum {UNKNOWN, DMNEW, WETEK, AZBOX863x, AZBOX865x, ST, PALLAS, VULCAN, XILLEON, BRCM7400, BRCM7401, BRCM7405, BRCM7325, BRCM7335, BRCM7346, BRCM7358, BRCM7362, BRCM7241, BRCM7251, BRCM7252, BRCM7252S, BRCM7356, BRCM7424, BRCM7425, BRCM7435, BRCM7444, BRCM7552, BRCM7581, BRCM7583, BRCM7584, BRCM72604VU, BRCM72604, BRCM7278, BRCM75845, BRCM7366, BRCM73625, BRCM73565, BRCM7439DAGS, BRCM7439, HISIL_ARM, HISI_3716MV410, HISI_3716MV430, HISI_3798CV200, HISI_3798MV200, HISI_3798MV300} stb_type = UNKNOWN;
 #endif
+
+static int stb_supports_uhd_grab_buffers(void)
+{
+	return stb_type == DMNEW ||
+	       stb_type == BRCM7439 ||      /* Dreambox DM900/DM920 */
+	       stb_type == BRCM7439DAGS ||
+	       stb_type == BRCM72604 ||
+	       stb_type == BRCM72604VU;
+}
 
 static int chr_luma_stride = 0x40;
 static int chr_luma_register_offset = 0;
@@ -285,17 +301,783 @@ static inline void clamp_rect(int *L,int *T,int *W,int *H,int outW,int outH)
     if (*H < 1) *H = 1;
 }
 
+
+/*
+ * Automatic ffmpeg stream backend.
+ *
+ * Dream receivers only for now: DM900/DM920 (BRCM7439) and
+ * DreamOne/DreamTwo (DMNEW) can expose UHD/HEVC decoder surfaces in a
+ * hardware-private layout that is not safely readable as
+ * linear YUV from /dev/mem or /dev/videograbber.  DreamOS/FreezeFrame handles
+ * this by grabbing one decoded frame from the current service stream with
+ * ffmpeg.  Keep the logic inside grab so callers do not need a Python wrapper.
+ */
+static int grab_read_text_file(const char *path, char *buf, size_t len)
+{
+	FILE *f;
+	size_t n;
+	if (!buf || len == 0)
+		return -1;
+	buf[0] = 0;
+	f = fopen(path, "r");
+	if (!f)
+		return -1;
+	n = fread(buf, 1, len - 1, f);
+	fclose(f);
+	buf[n] = 0;
+	while (n && (buf[n - 1] == '\n' || buf[n - 1] == '\r' || buf[n - 1] == ' ' || buf[n - 1] == '\t'))
+		buf[--n] = 0;
+	return n ? 0 : -1;
+}
+
+static int grab_hexval(int c)
+{
+	if (c >= '0' && c <= '9') return c - '0';
+	if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+	if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+	return -1;
+}
+
+static void grab_percent_decode_inplace(char *s)
+{
+	char *d = s;
+	while (s && *s)
+	{
+		if (s[0] == '%' && isxdigit((unsigned char)s[1]) && isxdigit((unsigned char)s[2]))
+		{
+			int hi = grab_hexval(s[1]);
+			int lo = grab_hexval(s[2]);
+			*d++ = (char)((hi << 4) | lo);
+			s += 3;
+		}
+		else
+			*d++ = *s++;
+	}
+	*d = 0;
+}
+
+static void grab_xml_unescape_inplace(char *s)
+{
+	char *d = s;
+	while (s && *s)
+	{
+		if (!strncmp(s, "&amp;", 5)) { *d++ = '&'; s += 5; }
+		else if (!strncmp(s, "&lt;", 4)) { *d++ = '<'; s += 4; }
+		else if (!strncmp(s, "&gt;", 4)) { *d++ = '>'; s += 4; }
+		else if (!strncmp(s, "&quot;", 6)) { *d++ = '"'; s += 6; }
+		else if (!strncmp(s, "&apos;", 6)) { *d++ = '\''; s += 6; }
+		else *d++ = *s++;
+	}
+	*d = 0;
+}
+
+static int grab_http_get_local80(const char *path, char *out, size_t out_len)
+{
+	int fd;
+	struct sockaddr_in addr;
+	char req[512];
+	ssize_t r;
+	size_t used = 0;
+	char *body;
+
+	if (!out || out_len < 2)
+		return -1;
+	out[0] = 0;
+
+	fd = socket(AF_INET, SOCK_STREAM, 0);
+	if (fd < 0)
+		return -1;
+
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(80);
+	addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+	if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+	{
+		close(fd);
+		return -1;
+	}
+
+	snprintf(req, sizeof(req), "GET %s HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n", path);
+	if (write(fd, req, strlen(req)) < 0)
+	{
+		close(fd);
+		return -1;
+	}
+
+	while (used + 1 < out_len && (r = read(fd, out + used, out_len - used - 1)) > 0)
+		used += (size_t)r;
+	close(fd);
+	out[used] = 0;
+
+	body = strstr(out, "\r\n\r\n");
+	if (body)
+	{
+		body += 4;
+		memmove(out, body, strlen(body) + 1);
+	}
+	return used ? 0 : -1;
+}
+
+static int grab_extract_xml_tag(const char *xml, const char *tag, char *out, size_t out_len)
+{
+	char open_tag[96], close_tag[96];
+	const char *p, *q;
+	size_t n;
+	if (!xml || !tag || !out || out_len == 0)
+		return -1;
+	snprintf(open_tag, sizeof(open_tag), "<%s>", tag);
+	snprintf(close_tag, sizeof(close_tag), "</%s>", tag);
+	p = strstr(xml, open_tag);
+	if (!p)
+		return -1;
+	p += strlen(open_tag);
+	q = strstr(p, close_tag);
+	if (!q || q <= p)
+		return -1;
+	n = (size_t)(q - p);
+	if (n >= out_len)
+		n = out_len - 1;
+	memcpy(out, p, n);
+	out[n] = 0;
+	grab_xml_unescape_inplace(out);
+	grab_percent_decode_inplace(out);
+	return out[0] ? 0 : -1;
+}
+
+static int grab_normalize_stream_input(const char *in, char *out, size_t out_len)
+{
+	char tmp[2048];
+	if (!in || !*in || !out || out_len == 0)
+		return -1;
+
+	snprintf(tmp, sizeof(tmp), "%s", in);
+	grab_xml_unescape_inplace(tmp);
+	grab_percent_decode_inplace(tmp);
+
+	if (!strncmp(tmp, "http://", 7) || !strncmp(tmp, "https://", 8) ||
+	    !strncmp(tmp, "file:", 5) || tmp[0] == '/')
+	{
+		snprintf(out, out_len, "%s", tmp);
+		return 0;
+	}
+
+	/* Treat everything else as an Enigma2 service reference. */
+	snprintf(out, out_len, "http://127.0.0.1:8001/%s", tmp);
+	return 0;
+}
+
+static int grab_get_current_stream_input(char *out, size_t out_len, const char *override)
+{
+	char body[8192];
+	char sref[2048];
+
+	if (override && *override)
+		return grab_normalize_stream_input(override, out, out_len);
+
+	/* OpenWebif/WebInterface normally provides the currently playing service here. */
+	if (grab_http_get_local80("/web/getcurrent", body, sizeof(body)) == 0 &&
+	    grab_extract_xml_tag(body, "e2servicereference", sref, sizeof(sref)) == 0)
+		return grab_normalize_stream_input(sref, out, out_len);
+
+	return -1;
+}
+
+static int grab_run_argv(char *const argv[])
+{
+	pid_t pid;
+	int status = 0;
+
+	if (!quiet)
+	{
+		int i;
+		fprintf(stderr, "ffmpeg backend:");
+		for (i = 0; argv[i]; ++i)
+			fprintf(stderr, " %s", argv[i]);
+		fprintf(stderr, "\n");
+	}
+
+	pid = fork();
+	if (pid < 0)
+		return -1;
+	if (pid == 0)
+	{
+		execvp(argv[0], argv);
+		_exit(127);
+	}
+	if (waitpid(pid, &status, 0) < 0)
+		return -1;
+	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+		return -1;
+	return 0;
+}
+
+static const char *grab_ffmpeg_codec_name(int use_png, int use_jpg)
+{
+	if (use_png)
+		return "png";
+	if (use_jpg)
+		return "mjpeg";
+	return NULL; /* BMP is written by grab itself from raw BGR24. */
+}
+
+static int grab_ffmpeg_quality_arg(int jpg_quality)
+{
+	int q;
+	if (jpg_quality <= 0)
+		jpg_quality = 80;
+	if (jpg_quality > 100)
+		jpg_quality = 100;
+	/* ffmpeg mjpeg qscale: 2 is high quality, 31 is worst. */
+	q = 31 - (jpg_quality * 29 / 100);
+	if (q < 2) q = 2;
+	if (q > 31) q = 31;
+	return q;
+}
+
+static int grab_write_bmp24_bgr(const char *out, const unsigned char *bgr, int w, int h)
+{
+	FILE *fp;
+	unsigned char hdr[14 + 40];
+	unsigned char pad[3] = {0, 0, 0};
+	int i = 0;
+	int y;
+	const int row_bytes = w * 3;
+	const int padded_row = (row_bytes + 3) & ~3;
+	const int pad_bytes = padded_row - row_bytes;
+	const uint32_t image_size = (uint32_t)padded_row * (uint32_t)h;
+	const uint32_t file_size = image_size + 14U + 40U;
+
+	if (!out || !bgr || w <= 0 || h <= 0 || w > 3840 || h > 2160)
+		return -1;
+
+	fp = fopen(out, "wb");
+	if (!fp) {
+		fprintf(stderr, "ffmpeg backend: failed to open BMP output %s: %s\n", out, strerror(errno));
+		return -1;
+	}
+
+#define PUT32_LE(x) do { uint32_t v__ = (uint32_t)(x); hdr[i++] = v__ & 0xff; hdr[i++] = (v__ >> 8) & 0xff; hdr[i++] = (v__ >> 16) & 0xff; hdr[i++] = (v__ >> 24) & 0xff; } while (0)
+#define PUT16_LE(x) do { uint16_t v__ = (uint16_t)(x); hdr[i++] = v__ & 0xff; hdr[i++] = (v__ >> 8) & 0xff; } while (0)
+#define PUT8_LE(x)  do { hdr[i++] = (unsigned char)(x); } while (0)
+	PUT8_LE('B'); PUT8_LE('M');
+	PUT32_LE(file_size);
+	PUT16_LE(0); PUT16_LE(0); PUT32_LE(14 + 40);
+	PUT32_LE(40); PUT32_LE(w); PUT32_LE(h);
+	PUT16_LE(1); PUT16_LE(24);
+	PUT32_LE(0); PUT32_LE(image_size); PUT32_LE(0); PUT32_LE(0); PUT32_LE(0); PUT32_LE(0);
+#undef PUT32_LE
+#undef PUT16_LE
+#undef PUT8_LE
+
+	if (fwrite(hdr, 1, sizeof(hdr), fp) != sizeof(hdr)) {
+		fclose(fp);
+		return -1;
+	}
+
+	/* BMP stores bottom-up rows.  ffmpeg rawvideo gives top-down BGR24. */
+	for (y = h - 1; y >= 0; --y) {
+		const unsigned char *row = bgr + (size_t)y * (size_t)row_bytes;
+		if (fwrite(row, 1, (size_t)row_bytes, fp) != (size_t)row_bytes) {
+			fclose(fp);
+			return -1;
+		}
+		if (pad_bytes && fwrite(pad, 1, (size_t)pad_bytes, fp) != (size_t)pad_bytes) {
+			fclose(fp);
+			return -1;
+		}
+	}
+
+	if (fclose(fp) != 0)
+		return -1;
+	return 0;
+}
+
+static int grab_read_exact_file(const char *path, unsigned char *buf, size_t len)
+{
+	FILE *fp;
+	size_t got;
+
+	if (!path || !buf || len == 0)
+		return -1;
+	fp = fopen(path, "rb");
+	if (!fp)
+		return -1;
+	got = fread(buf, 1, len, fp);
+	fclose(fp);
+	return got == len ? 0 : -1;
+}
+
+static int grab_raw_bgr24_file_to_bmp(const char *raw_path, const char *bmp_path, int w, int h)
+{
+	const size_t need = (size_t)w * (size_t)h * 3U;
+	unsigned char *buf;
+	int ret;
+
+	if (w <= 0 || h <= 0 || need == 0 || need > 64U * 1024U * 1024U)
+		return -1;
+
+	buf = (unsigned char *)malloc(need);
+	if (!buf) {
+		fprintf(stderr, "ffmpeg backend: malloc failed for raw frame size=%zu\n", need);
+		return -1;
+	}
+
+	ret = grab_read_exact_file(raw_path, buf, need);
+	if (ret < 0)
+		fprintf(stderr, "ffmpeg backend: raw BGR frame is missing or short: %s expected=%zu\n", raw_path, need);
+	else
+		ret = grab_write_bmp24_bgr(bmp_path, buf, w, h);
+
+	free(buf);
+	return ret;
+}
+
+static int grab_read_current_video_size(int *w, int *h)
+{
+	int rw = 0, rh = 0;
+	int sw = 0, sh = 0;
+
+	/*
+	 * Old Broadcom/Dreambox drivers normally expose the active video size as
+	 * hexadecimal values below /proc/stb/vmpeg.  DreamOne/DreamTwo (DMNEW)
+	 * can instead have the useful decoder size in /sys/class/video/frame_*;
+	 * if we only look at /proc/stb/vmpeg there, UHD may be missed and grab
+	 * falls back to the old /dev/videograbber path, producing the broken
+	 * green/noisy image.
+	 */
+	readIntFromFile("/proc/stb/vmpeg/0/xres", 16, &rw);
+	readIntFromFile("/proc/stb/vmpeg/0/yres", 16, &rh);
+
+	readIntFromFile("/sys/class/video/frame_width", 10, &sw);
+	readIntFromFile("/sys/class/video/frame_height", 10, &sh);
+
+	if (sw > 0 && sh > 0)
+	{
+		if (rw <= 0 || rh <= 0 ||
+		    ((unsigned long long)sw * (unsigned long long)sh >
+		     (unsigned long long)rw * (unsigned long long)rh))
+		{
+			rw = sw;
+			rh = sh;
+		}
+	}
+
+	if (w) *w = rw;
+	if (h) *h = rh;
+	return (rw > 0 && rh > 0) ? 0 : -1;
+}
+
+static int grab_current_codec_is_hevc(void)
+{
+	char codec[128];
+	if (grab_read_text_file("/proc/stb/vmpeg/0/codec", codec, sizeof(codec)) < 0)
+		return 0;
+	return strcasestr(codec, "hevc") || strcasestr(codec, "h265") || strcasestr(codec, "h.265");
+}
+
+static int grab_ffmpeg_backend_should_autouse(int *src_w, int *src_h)
+{
+	int w = 0, h = 0;
+	grab_read_current_video_size(&w, &h);
+	if (src_w) *src_w = w;
+	if (src_h) *src_h = h;
+
+	/* Scope deliberately limited to Dream receivers for now.  Other 4K STBs
+	 * keep their existing grab backend until they are tested separately. */
+	if ((stb_type == BRCM7439 || stb_type == DMNEW) && (w > 1920 || h > 1080))
+		return 1;
+
+	return 0;
+}
+
+
+static const char *grab_ffmpeg_loglevel(void)
+{
+	const char *env = getenv("GRAB_FFMPEG_LOGLEVEL");
+	if (env && *env)
+		return env;
+	/* Live HEVC joins often print PPS/RPS errors until the next decodable
+	 * access point.  They are expected and would only slow/log-spam WebIF. */
+	return "fatal";
+}
+
+static void grab_make_ffmpeg_scale_fast(char *dst, size_t dst_len, int out_w, int out_h, int wait_for_clean_frame)
+{
+	if (wait_for_clean_frame)
+		snprintf(dst, dst_len, "fps=1/2,scale=%d:%d:flags=fast_bilinear,format=bgr24", out_w, out_h);
+	else
+		snprintf(dst, dst_len, "scale=%d:%d:flags=fast_bilinear,format=bgr24", out_w, out_h);
+}
+
+static int grab_run_argv_capture_stdout(char *const argv[], unsigned char *buf, size_t need)
+{
+	int pipefd[2];
+	pid_t pid;
+	int status = 0;
+	size_t got = 0;
+
+	if (!argv || !buf || need == 0)
+		return -1;
+
+	if (!quiet)
+	{
+		int i;
+		fprintf(stderr, "ffmpeg backend:");
+		for (i = 0; argv[i]; ++i)
+			fprintf(stderr, " %s", argv[i]);
+		fprintf(stderr, "\n");
+	}
+
+	if (pipe(pipefd) < 0)
+		return -1;
+
+	pid = fork();
+	if (pid < 0)
+	{
+		close(pipefd[0]);
+		close(pipefd[1]);
+		return -1;
+	}
+
+	if (pid == 0)
+	{
+		close(pipefd[0]);
+		dup2(pipefd[1], STDOUT_FILENO);
+		close(pipefd[1]);
+		execvp(argv[0], argv);
+		_exit(127);
+	}
+
+	close(pipefd[1]);
+	while (got < need)
+	{
+		ssize_t r = read(pipefd[0], buf + got, need - got);
+		if (r < 0)
+		{
+			if (errno == EINTR)
+				continue;
+			break;
+		}
+		if (r == 0)
+			break;
+		got += (size_t)r;
+	}
+	close(pipefd[0]);
+
+	if (waitpid(pid, &status, 0) < 0)
+		return -1;
+
+	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0 || got != need)
+	{
+		if (!quiet)
+			fprintf(stderr, "ffmpeg backend: raw stdout frame incomplete got=%zu expected=%zu\n", got, need);
+		return -1;
+	}
+
+	return 0;
+}
+
+static int grab_ffmpeg_decode_bgr24_to_buffer(const char *input, unsigned char *video, int out_w, int out_h, int wait_for_clean_frame)
+{
+	char vf[128];
+	const char *loglevel = grab_ffmpeg_loglevel();
+	size_t need;
+	char *argv[] = {
+		"/usr/bin/ffmpeg", "-hide_banner", "-nostdin", "-loglevel", (char *)loglevel,
+		"-an", "-sn", "-dn", "-i", (char *)input,
+		"-map", "0:v:0", "-vf", vf, "-vframes", "1",
+		"-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1", NULL
+	};
+
+	if (!input || !video || out_w <= 0 || out_h <= 0 || out_w > 1920 || out_h > 1080)
+		return -1;
+
+	need = (size_t)out_w * (size_t)out_h * 3U;
+	if (need == 0 || need > 1920U * 1080U * 3U)
+		return -1;
+
+	grab_make_ffmpeg_scale_fast(vf, sizeof(vf), out_w, out_h, wait_for_clean_frame);
+	return grab_run_argv_capture_stdout(argv, video, need);
+}
+
+static int grab_ffmpeg_getvideo_frame(unsigned char *video, int *xres, int *yres, int width, const char *input_override)
+{
+	char input[4096];
+	int src_w = 0, src_h = 0;
+	int out_w, out_h;
+	int ret;
+
+	if (xres) *xres = 0;
+	if (yres) *yres = 0;
+
+	if (access("/usr/bin/ffmpeg", X_OK) != 0)
+	{
+		fprintf(stderr, "ffmpeg backend: /usr/bin/ffmpeg is not executable\n");
+		return -1;
+	}
+
+	if (grab_get_current_stream_input(input, sizeof(input), input_override) < 0)
+	{
+		fprintf(stderr, "ffmpeg backend: could not determine current service input from local WebInterface/OpenWebif\n");
+		return -1;
+	}
+
+	grab_read_current_video_size(&src_w, &src_h);
+	out_w = width > 0 ? width : (src_w > 1920 ? 1920 : (src_w > 0 ? src_w : 1920));
+	if (out_w > 1920)
+		out_w = 1920;
+	if (out_w <= 0)
+		out_w = 1920;
+
+	out_h = (src_w > 0 && src_h > 0) ? (int)((long long)src_h * out_w / src_w) : (out_w * 9 / 16);
+	if (out_h <= 0)
+		out_h = out_w * 9 / 16;
+	if (out_h > 1080)
+		out_h = 1080;
+	if (out_h & 1)
+		out_h++;
+
+	if (!quiet)
+		fprintf(stderr, "ffmpeg backend: input=%s output=%dx%d target=internal-bgr24\n", input, out_w, out_h);
+
+	/* Fast path first: no fps=1/2 throttle.  If the live HEVC join starts before
+	 * a clean access unit, retry once with the slower DreamOS-style wait filter. */
+	ret = grab_ffmpeg_decode_bgr24_to_buffer(input, video, out_w, out_h, 0);
+	if (ret < 0)
+	{
+		if (!quiet)
+			fprintf(stderr, "ffmpeg backend: fast frame failed, retrying with fps=1/2 wait mode\n");
+		ret = grab_ffmpeg_decode_bgr24_to_buffer(input, video, out_w, out_h, 1);
+	}
+
+	if (ret == 0)
+	{
+		if (xres) *xres = out_w;
+		if (yres) *yres = out_h;
+	}
+	return ret;
+}
+
+static void grab_make_ffmpeg_scale(char *dst, size_t dst_len, int out_w, int out_h, int raw_bgr)
+{
+	if (raw_bgr)
+		snprintf(dst, dst_len, "fps=1/2,scale=%d:%d,format=bgr24", out_w, out_h);
+	else
+		snprintf(dst, dst_len, "fps=1/2,scale=%d:%d", out_w, out_h);
+}
+
+static int grab_ffmpeg_one_video_image(const char *input, const char *out, int out_w, int out_h, int use_png, int use_jpg, int jpg_quality)
+{
+	char vf[96];
+	char qbuf[16];
+	const char *codec = grab_ffmpeg_codec_name(use_png, use_jpg);
+	char *argv_jpg[] = {
+		"/usr/bin/ffmpeg", "-hide_banner", "-loglevel", "error",
+		"-i", (char *)input,
+		"-vf", vf, "-vframes", "1",
+		"-movflags", "+faststart", "-f", "image2", "-c:v", (char *)codec, "-q:v", qbuf, "-y", (char *)out, NULL
+	};
+	char *argv_other[] = {
+		"/usr/bin/ffmpeg", "-hide_banner", "-loglevel", "error",
+		"-i", (char *)input,
+		"-vf", vf, "-vframes", "1",
+		"-movflags", "+faststart", "-f", "image2", "-c:v", (char *)codec, "-y", (char *)out, NULL
+	};
+
+	if (!codec)
+		return -1;
+	if (out_w <= 0)
+		out_w = 1920;
+	if (out_h <= 0)
+		out_h = (out_w * 9) / 16;
+	if (out_h & 1)
+		out_h++;
+	grab_make_ffmpeg_scale(vf, sizeof(vf), out_w, out_h, 0);
+	/* Match DreamOS FreezeFrame behaviour on armhf: no tiny analyzeduration/probesize.
+	 * fps=1/2 lets ffmpeg wait for a decodable HEVC frame instead of failing on
+	 * the first packet after joining the live TS. */
+	snprintf(qbuf, sizeof(qbuf), "%d", grab_ffmpeg_quality_arg(jpg_quality));
+	return grab_run_argv(use_jpg ? argv_jpg : argv_other);
+}
+
+static int grab_ffmpeg_one_video_bmp(const char *input, const char *out, int out_w, int out_h)
+{
+	char vf[96];
+	char raw_tmp[128];
+	int ret;
+	char *argv[] = {
+		"/usr/bin/ffmpeg", "-hide_banner", "-loglevel", "error",
+		"-i", (char *)input,
+		"-vf", vf, "-vframes", "1",
+		"-f", "rawvideo", "-pix_fmt", "bgr24", "-y", raw_tmp, NULL
+	};
+
+	if (out_w <= 0)
+		out_w = 1920;
+	if (out_h <= 0)
+		out_h = (out_w * 9) / 16;
+	if (out_h & 1)
+		out_h++;
+
+	grab_make_ffmpeg_scale(vf, sizeof(vf), out_w, out_h, 1);
+	snprintf(raw_tmp, sizeof(raw_tmp), "/tmp/grab-ffmpeg-%ld-video.bgr", (long)getpid());
+	unlink(raw_tmp);
+
+	ret = grab_run_argv(argv);
+	if (ret == 0)
+		ret = grab_raw_bgr24_file_to_bmp(raw_tmp, out, out_w, out_h);
+	unlink(raw_tmp);
+	return ret;
+}
+
+static int grab_ffmpeg_one_video(const char *input, const char *out, int out_w, int out_h, int use_png, int use_jpg, int jpg_quality)
+{
+	if (!use_png && !use_jpg)
+		return grab_ffmpeg_one_video_bmp(input, out, out_w, out_h);
+	return grab_ffmpeg_one_video_image(input, out, out_w, out_h, use_png, use_jpg, jpg_quality);
+}
+
+static int grab_ffmpeg_one_osd(const char *out, int out_w, int out_h)
+{
+	char scale[64];
+	char *argv[] = {
+		"/usr/bin/ffmpeg", "-hide_banner", "-loglevel", "error",
+		"-f", "fbdev", "-i", "/dev/fb0",
+		"-frames:v", "1", "-vf", scale,
+		"-f", "image2", "-c:v", "png", "-y", (char *)out, NULL
+	};
+	if (out_w <= 0)
+		out_w = 1920;
+	if (out_h <= 0)
+		out_h = (out_w * 9) / 16;
+	if (out_h & 1)
+		out_h++;
+	snprintf(scale, sizeof(scale), "scale=%d:%d", out_w, out_h);
+	return grab_run_argv(argv);
+}
+
+static int grab_ffmpeg_overlay_image(const char *osdfile, const char *videofile, const char *out, int use_png, int use_jpg, int jpg_quality)
+{
+	char qbuf[16];
+	const char *codec = grab_ffmpeg_codec_name(use_png, use_jpg);
+	char *argv_jpg[] = {
+		"/usr/bin/ffmpeg", "-hide_banner", "-loglevel", "error",
+		"-i", (char *)osdfile, "-i", (char *)videofile,
+		"-filter_complex", "[1:v][0:v] overlay=0:0",
+		"-vframes", "1", "-f", "image2", "-c:v", (char *)codec, "-q:v", qbuf, "-y", (char *)out, NULL
+	};
+	char *argv_other[] = {
+		"/usr/bin/ffmpeg", "-hide_banner", "-loglevel", "error",
+		"-i", (char *)osdfile, "-i", (char *)videofile,
+		"-filter_complex", "[1:v][0:v] overlay=0:0",
+		"-vframes", "1", "-f", "image2", "-c:v", (char *)codec, "-y", (char *)out, NULL
+	};
+	if (!codec)
+		return -1;
+	snprintf(qbuf, sizeof(qbuf), "%d", grab_ffmpeg_quality_arg(jpg_quality));
+	return grab_run_argv(use_jpg ? argv_jpg : argv_other);
+}
+
+static int grab_ffmpeg_overlay_bmp(const char *osdfile, const char *videofile, const char *out, int out_w, int out_h)
+{
+	char raw_tmp[128];
+	int ret;
+	char *argv[] = {
+		"/usr/bin/ffmpeg", "-hide_banner", "-loglevel", "error",
+		"-i", (char *)osdfile, "-i", (char *)videofile,
+		"-filter_complex", "[1:v][0:v] overlay=0:0,format=bgr24",
+		"-vframes", "1", "-f", "rawvideo", "-pix_fmt", "bgr24", "-y", raw_tmp, NULL
+	};
+
+	if (out_w <= 0 || out_h <= 0)
+		return -1;
+
+	snprintf(raw_tmp, sizeof(raw_tmp), "/tmp/grab-ffmpeg-%ld-all.bgr", (long)getpid());
+	unlink(raw_tmp);
+	ret = grab_run_argv(argv);
+	if (ret == 0)
+		ret = grab_raw_bgr24_file_to_bmp(raw_tmp, out, out_w, out_h);
+	unlink(raw_tmp);
+	return ret;
+}
+
+static int grab_ffmpeg_overlay(const char *osdfile, const char *videofile, const char *out, int out_w, int out_h, int use_png, int use_jpg, int jpg_quality)
+{
+	if (!use_png && !use_jpg)
+		return grab_ffmpeg_overlay_bmp(osdfile, videofile, out, out_w, out_h);
+	return grab_ffmpeg_overlay_image(osdfile, videofile, out, use_png, use_jpg, jpg_quality);
+}
+
+static int grab_ffmpeg_snapshot(const char *filename, int video_only, int osd_only, int width, int use_png, int use_jpg, int jpg_quality, const char *input_override)
+{
+	char input[4096];
+	char osd_tmp[128];
+	char video_tmp[128];
+	int src_w = 0, src_h = 0;
+	int out_w, out_h;
+	int ret = -1;
+
+	if (osd_only)
+		return -1;
+	if (!filename)
+	{
+		fprintf(stderr, "ffmpeg backend: stdout mode is not supported\n");
+		return -1;
+	}
+	if (access("/usr/bin/ffmpeg", X_OK) != 0)
+	{
+		fprintf(stderr, "ffmpeg backend: /usr/bin/ffmpeg is not executable\n");
+		return -1;
+	}
+	if (grab_get_current_stream_input(input, sizeof(input), input_override) < 0)
+	{
+		fprintf(stderr, "ffmpeg backend: could not determine current service input from local WebInterface/OpenWebif\n");
+		return -1;
+	}
+
+	grab_read_current_video_size(&src_w, &src_h);
+	out_w = width > 0 ? width : (src_w > 1920 ? 1920 : (src_w > 0 ? src_w : 1920));
+	if (out_w > 1920)
+		out_w = 1920;
+	out_h = (src_w > 0 && src_h > 0) ? (int)((long long)src_h * out_w / src_w) : (out_w * 9 / 16);
+	if (out_h <= 0)
+		out_h = out_w * 9 / 16;
+	if (out_h & 1)
+		out_h++;
+
+	if (!quiet)
+		fprintf(stderr, "ffmpeg backend: input=%s output=%dx%d file=%s\n", input, out_w, out_h, filename);
+
+	if (video_only)
+		return grab_ffmpeg_one_video(input, filename, out_w, out_h, use_png, use_jpg, jpg_quality);
+
+	snprintf(osd_tmp, sizeof(osd_tmp), "/tmp/grab-ffmpeg-%ld-osd.png", (long)getpid());
+	snprintf(video_tmp, sizeof(video_tmp), "/tmp/grab-ffmpeg-%ld-video.png", (long)getpid());
+	unlink(osd_tmp);
+	unlink(video_tmp);
+
+	if (grab_ffmpeg_one_osd(osd_tmp, out_w, out_h) == 0 &&
+	    grab_ffmpeg_one_video(input, video_tmp, out_w, out_h, 1, 0, 100) == 0)
+		ret = grab_ffmpeg_overlay(osd_tmp, video_tmp, filename, out_w, out_h, use_png, use_jpg, jpg_quality);
+
+	unlink(osd_tmp);
+	unlink(video_tmp);
+	return ret;
+}
+
 // main program
 
 int main(int argc, char **argv)
 {
 	int xres_v = 0, yres_v = 0, xres_o = 0, yres_o = 0, xres = 0, yres = 0, aspect;
-	int c,osd_only,video_only,use_osd_res,width,use_png,use_jpg,jpg_quality,no_aspect,use_letterbox;
+	int c,osd_only,video_only,use_osd_res,width,use_png,use_jpg,jpg_quality,no_aspect,use_letterbox,use_ffmpeg_video_backend;
 
 	// we use fast resize as standard now
 	resize = &fast_resize;
 
-	osd_only=video_only=use_osd_res=width=use_png=use_jpg=no_aspect=use_letterbox=0;
+	osd_only=video_only=use_osd_res=width=use_png=use_jpg=no_aspect=use_letterbox=use_ffmpeg_video_backend=0;
 	jpg_quality=50;
 	aspect=1;
 
@@ -816,7 +1598,7 @@ int main(int argc, char **argv)
 			case 'r': // use given resolution
 				width=atoi(optarg);
 				{
-					int max_resize_width = (stb_type == DMNEW) ? 3840 : 1920;
+					int max_resize_width = stb_supports_uhd_grab_buffers() ? 3840 : 1920;
 					if (width > max_resize_width)
 					{
 						fprintf(stderr, "Error: -r (size) is limited to %d pixels!\n", max_resize_width);
@@ -854,9 +1636,31 @@ int main(int argc, char **argv)
 	if (optind < argc) // filename
 		filename = argv[optind];
 
+	/* Use the DreamOS-style ffmpeg stream backend only for the video plane.
+	 * The decoded BGR frame is handed back to aio-grab, so normal BMP/JPG/PNG,
+	 * stdout mode (-s), OSD capture and the existing C combiner still work.
+	 * This is faster for OpenWebif than spawning ffmpeg again for OSD/overlay. */
+	if (!osd_only)
+	{
+		int src_w = 0, src_h = 0;
+		int auto_ffmpeg = grab_ffmpeg_backend_should_autouse(&src_w, &src_h);
+		if (auto_ffmpeg)
+		{
+			use_ffmpeg_video_backend = 1;
+			/* OpenWebif/grab callers keep the normal syntax. For UHD sources force the
+			 * capture plane down to HD so a plain "grab -v" does not generate a
+			 * huge 3840x2160 image. Explicit -r values above HD are clamped later by
+			 * the ffmpeg backend as well. */
+			if ((src_w > 1920 || src_h > 1080) && (!width || width > 1920))
+				width = 1920;
+			if (!quiet)
+				fprintf(stderr, "Using ffmpeg backend for Dream UHD video capture ...\n");
+		}
+	}
+
 	size_t mallocsize = 1920U * 1080U;
 
-	if (stb_type == DMNEW)
+	if (stb_supports_uhd_grab_buffers())
 		mallocsize = 3840U * 2160U;
 	else if (stb_type == VULCAN || stb_type == PALLAS)
 		mallocsize = 720U * 576U;
@@ -906,7 +1710,12 @@ int main(int argc, char **argv)
 	{
 		if (!quiet)
 			fprintf(stderr, "Grabbing Video ...\n");
-		if (stb_type == BRCM7366 || stb_type == BRCM7251 || stb_type == BRCM7252 || stb_type == BRCM7252S || stb_type == BRCM7444 || stb_type == BRCM72604VU || stb_type == BRCM7278 || stb_type == HISIL_ARM)
+		if (use_ffmpeg_video_backend)
+		{
+			if (grab_ffmpeg_getvideo_frame(video, &xres_v, &yres_v, width, NULL) < 0)
+				fprintf(stderr, "ffmpeg backend failed; refusing unsafe raw UHD video grab\n");
+		}
+		else if (stb_type == BRCM7366 || stb_type == BRCM7251 || stb_type == BRCM7252 || stb_type == BRCM7252S || stb_type == BRCM7444 || stb_type == BRCM72604VU || stb_type == BRCM7278 || stb_type == HISIL_ARM)
 		{
 			getvideo2(video, &xres_v,&yres_v);
 		}
@@ -918,6 +1727,22 @@ int main(int argc, char **argv)
 		{
 			getvideo(video,&xres_v,&yres_v);
 		}
+	}
+
+	if (!osd_only && (xres_v <= 0 || yres_v <= 0))
+	{
+		if (video_only)
+		{
+			fprintf(stderr, "Video grab failed or returned empty frame; not writing a fake 0x0 image\n");
+			free(video);
+			free(osd);
+			free(output);
+			if (hisi_lib_msp)    dlclose(hisi_lib_msp);
+			if (hisi_lib_common) dlclose(hisi_lib_common);
+			return 1;
+		}
+		fprintf(stderr, "Video grab failed or returned empty frame; falling back to OSD-only screenshot\n");
+		osd_only = 1;
 	}
 
 	if (osd_only)
@@ -1117,7 +1942,7 @@ post_merge:
 
 
 	// resize to specific width ?
-	if (width)
+	if (width && width != xres)
 	{
 		if (!quiet)
 			fprintf(stderr, "Resizing Screenshot to %d x %d ...\n",width,yres*width/xres);
@@ -3563,6 +4388,18 @@ dmerr:
 
 	close(mem_fd);
 
+	const size_t max_video_pixels = stb_supports_uhd_grab_buffers() ? 3840U * 2160U : 1920U * 1080U;
+	if (stride <= 0 || res <= 0 ||
+	    (size_t)stride > max_video_pixels / (size_t)res)
+	{
+		fprintf(stderr,
+			"getvideo: refusing unsafe frame geometry %dx%d for allocated buffers\n",
+			stride, res);
+		free(luma);
+		free(chroma);
+		return;
+	}
+
 	// yuv2rgb conversion (4:2:0)
 	const int rgbstride = stride * 3;
 	const int scans = res / 2;
@@ -3699,7 +4536,7 @@ static int getosd_e2egl(unsigned char *osd, int *xres, int *yres)
 	const size_t width = (size_t)header.width;
 	const size_t height = (size_t)header.height;
 	const size_t stride = (size_t)header.stride;
-	const size_t max_pixels = (stb_type == DMNEW) ? 3840U * 2160U : 1920U * 1080U;
+	const size_t max_pixels = stb_supports_uhd_grab_buffers() ? 3840U * 2160U : 1920U * 1080U;
 
 	if (memcmp(header.magic, e2egl_capture_magic, sizeof(header.magic)) ||
 	    header.format != E2EGL_CAPTURE_FORMAT_BGRA ||
