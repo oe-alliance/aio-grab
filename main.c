@@ -35,6 +35,9 @@ Feel free to use the code for your own projects. See LICENSE file for details.
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/un.h>
 #include <linux/types.h>
 #include <linux/fb.h>
 #include <sys/stat.h>
@@ -775,7 +778,7 @@ int main(int argc, char **argv)
 				fprintf(stderr,
 					"Usage: grab [commands] [filename]\n\n"
 					"command:\n"
-					"-o only grab osd (framebuffer) when using this with png or bmp\n"
+					"-o only grab osd (e2egl/framebuffer) when using this with png or bmp\n"
 					"   fileformat you will get a 32bit pic with alphachannel\n"
 					"-v only grab video\n"
 					"-i (video device) to grab video (default 0)\n"
@@ -3628,6 +3631,141 @@ dmerr:
 	free(chroma);
 }
 
+#define E2EGL_CAPTURE_SOCKET "/tmp/e2egl-osd.socket"
+#define E2EGL_CAPTURE_FORMAT_BGRA 1U
+
+static const char e2egl_capture_magic[8] = {'E', '2', 'E', 'G', 'L', '0', '1', 0};
+
+struct e2egl_capture_header
+{
+	char magic[8];
+	uint32_t width;
+	uint32_t height;
+	uint32_t stride;
+	uint32_t format;
+};
+
+static int e2egl_read_exact(int fd, void *data, size_t len)
+{
+	unsigned char *ptr = (unsigned char*)data;
+	while (len)
+	{
+		ssize_t bytes = recv(fd, ptr, len, 0);
+		if (bytes < 0)
+		{
+			if (errno == EINTR)
+				continue;
+			return 0;
+		}
+		if (!bytes)
+			return 0;
+		ptr += bytes;
+		len -= (size_t)bytes;
+	}
+	return 1;
+}
+
+static int getosd_e2egl(unsigned char *osd, int *xres, int *yres)
+{
+	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (fd < 0)
+		return 0;
+
+	struct timeval timeout;
+	timeout.tv_sec = 2;
+	timeout.tv_usec = 0;
+	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+	struct sockaddr_un addr;
+	memset(&addr, 0, sizeof(addr));
+	addr.sun_family = AF_UNIX;
+	strncpy(addr.sun_path, E2EGL_CAPTURE_SOCKET, sizeof(addr.sun_path) - 1);
+
+	if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
+	{
+		close(fd);
+		return 0;
+	}
+
+	struct e2egl_capture_header header;
+	if (!e2egl_read_exact(fd, &header, sizeof(header)))
+	{
+		if (!quiet)
+			fprintf(stderr, "e2egl OSD capture failed: no header\n");
+		close(fd);
+		return 0;
+	}
+
+	const size_t width = (size_t)header.width;
+	const size_t height = (size_t)header.height;
+	const size_t stride = (size_t)header.stride;
+	const size_t max_pixels = (stb_type == DMNEW) ? 3840U * 2160U : 1920U * 1080U;
+
+	if (memcmp(header.magic, e2egl_capture_magic, sizeof(header.magic)) ||
+	    header.format != E2EGL_CAPTURE_FORMAT_BGRA ||
+	    width == 0 || height == 0 ||
+	    width > 3840U || height > 2160U)
+	{
+		if (!quiet)
+			fprintf(stderr, "e2egl OSD capture failed: invalid header %zux%zu stride=%zu format=%u\n",
+				width, height, stride, header.format);
+		close(fd);
+		return 0;
+	}
+
+	const size_t row_bytes = width * 4U;
+	if (height > ((size_t)-1) / row_bytes ||
+	    width * height > max_pixels ||
+	    stride < row_bytes || stride > 32768U)
+	{
+		if (!quiet)
+			fprintf(stderr, "e2egl OSD capture failed: invalid geometry %zux%zu stride=%zu\n",
+				width, height, stride);
+		close(fd);
+		return 0;
+	}
+
+	if (stride == row_bytes)
+	{
+		if (!e2egl_read_exact(fd, osd, row_bytes * height))
+		{
+			if (!quiet)
+				fprintf(stderr, "e2egl OSD capture failed: short image\n");
+			close(fd);
+			return 0;
+		}
+	}
+	else
+	{
+		unsigned char *row = (unsigned char*)malloc(stride);
+		if (!row)
+		{
+			close(fd);
+			return 0;
+		}
+		for (size_t y = 0; y < height; ++y)
+		{
+			if (!e2egl_read_exact(fd, row, stride))
+			{
+				if (!quiet)
+					fprintf(stderr, "e2egl OSD capture failed: short image row\n");
+				free(row);
+				close(fd);
+				return 0;
+			}
+			memcpy(osd + y * row_bytes, row, row_bytes);
+		}
+		free(row);
+	}
+
+	close(fd);
+	*xres = (int)width;
+	*yres = (int)height;
+	if (!quiet)
+		fprintf(stderr, "Grabbing e2egl OSD ...\n... e2egl OSD-Size: %d x %d\n", *xres, *yres);
+	return 1;
+}
+
 // grabing the osd picture
 
 void getosd(unsigned char *osd, int *xres, int *yres)
@@ -3636,6 +3774,9 @@ void getosd(unsigned char *osd, int *xres, int *yres)
 	unsigned char *lfb;
 	struct fb_fix_screeninfo fix_screeninfo;
 	struct fb_var_screeninfo var_screeninfo;
+
+	if (getosd_e2egl(osd, xres, yres))
+		return;
 
 	fb=open(stb_type == WETEK ? "/dev/fb/2" : "/dev/fb/0", O_RDWR);
 	if (fb == -1)
