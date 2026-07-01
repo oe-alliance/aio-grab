@@ -306,7 +306,7 @@ static inline void clamp_rect(int *L,int *T,int *W,int *H,int outW,int outH)
  * Automatic ffmpeg stream backend.
  *
  * Dream receivers only for now: DM900/DM920 (BRCM7439) and
- * DreamOne/DreamTwo (DMNEW) can expose UHD/HEVC decoder surfaces in a
+ * DreamOne/DreamTwo (DMNEW) can expose HEVC/UHD decoder surfaces in a
  * hardware-private layout that is not safely readable as
  * linear YUV from /dev/mem or /dev/videograbber.  DreamOS/FreezeFrame handles
  * this by grabbing one decoded frame from the current service stream with
@@ -677,16 +677,54 @@ static int grab_current_codec_is_hevc(void)
 	return strcasestr(codec, "hevc") || strcasestr(codec, "h265") || strcasestr(codec, "h.265");
 }
 
+static int grab_current_service_type_is_hevc(void)
+{
+	char body[8192];
+	char sref[2048];
+	const char *p;
+	const char *q;
+	int idx = 0;
+
+	if (grab_http_get_local80("/web/getcurrent", body, sizeof(body)) < 0 ||
+	    grab_extract_xml_tag(body, "e2servicereference", sref, sizeof(sref)) < 0)
+		return 0;
+
+	for (p = sref; p && *p; p = q ? q + 1 : NULL, idx++)
+	{
+		q = strchr(p, ':');
+		/* Enigma2 service type 0x1F is HEVC/H.265 TV.  This catches
+		 * Dream HD services that are only 1920x1080 but still use HEVC and
+		 * therefore have the same broken raw grab/videograbber layout. */
+		if (idx == 2)
+		{
+			return p[0] == '1' && (p[1] == 'F' || p[1] == 'f') && (p[2] == ':' || p[2] == 0);
+		}
+		if (!q)
+			break;
+	}
+
+	return 0;
+}
+
+static int grab_current_video_is_hevc(void)
+{
+	return grab_current_codec_is_hevc() || grab_current_service_type_is_hevc();
+}
+
 static int grab_ffmpeg_backend_should_autouse(int *src_w, int *src_h)
 {
 	int w = 0, h = 0;
+	int hevc;
 	grab_read_current_video_size(&w, &h);
+	hevc = grab_current_video_is_hevc();
 	if (src_w) *src_w = w;
 	if (src_h) *src_h = h;
 
 	/* Scope deliberately limited to Dream receivers for now.  Other 4K STBs
-	 * keep their existing grab backend until they are tested separately. */
-	if ((stb_type == BRCM7439 || stb_type == DMNEW) && (w > 1920 || h > 1080))
+	 * keep their existing grab backend until they are tested separately.
+	 * On Dream boxes route both UHD and HEVC/H.265 through ffmpeg: some HD
+	 * 1920x1080 services are HEVC and fail through the raw grab paths too. */
+	if ((stb_type == BRCM7439 || stb_type == DMNEW) && (w > 1920 || h > 1080 || hevc))
 		return 1;
 
 	return 0;
@@ -1654,7 +1692,7 @@ int main(int argc, char **argv)
 			if ((src_w > 1920 || src_h > 1080) && (!width || width > 1920))
 				width = 1920;
 			if (!quiet)
-				fprintf(stderr, "Using ffmpeg backend for Dream UHD video capture ...\n");
+				fprintf(stderr, "Using ffmpeg backend for Dream HEVC/UHD video capture ...\n");
 		}
 	}
 
@@ -1713,7 +1751,7 @@ int main(int argc, char **argv)
 		if (use_ffmpeg_video_backend)
 		{
 			if (grab_ffmpeg_getvideo_frame(video, &xres_v, &yres_v, width, NULL) < 0)
-				fprintf(stderr, "ffmpeg backend failed; refusing unsafe raw UHD video grab\n");
+				fprintf(stderr, "ffmpeg backend failed; refusing unsafe raw HEVC/UHD video grab\n");
 		}
 		else if (stb_type == BRCM7366 || stb_type == BRCM7251 || stb_type == BRCM7252 || stb_type == BRCM7252S || stb_type == BRCM7444 || stb_type == BRCM72604VU || stb_type == BRCM7278 || stb_type == HISIL_ARM)
 		{
