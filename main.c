@@ -711,20 +711,35 @@ static int grab_current_video_is_hevc(void)
 	return grab_current_codec_is_hevc() || grab_current_service_type_is_hevc();
 }
 
+static int grab_current_video_is_dmnew_sd576(int w, int h)
+{
+	/* DreamOne/DreamTwo still have a second native-grabber corner case on
+	 * some 720x576 SD services.  Keep this scoped to DMNEW only: DM900/DM920
+	 * Broadcom SD grabs are not part of this workaround.  Accept a slightly
+	 * widened width range so both 4:3 and anamorphic/driver-normalized PAL SD
+	 * reports are caught, while normal HD remains on the fast native path. */
+	return stb_type == DMNEW && h == 576 && w >= 352 && w <= 1024;
+}
+
 static int grab_ffmpeg_backend_should_autouse(int *src_w, int *src_h)
 {
 	int w = 0, h = 0;
 	int hevc;
+	int dmnew_sd576;
 	grab_read_current_video_size(&w, &h);
 	hevc = grab_current_video_is_hevc();
+	dmnew_sd576 = grab_current_video_is_dmnew_sd576(w, h);
 	if (src_w) *src_w = w;
 	if (src_h) *src_h = h;
 
 	/* Scope deliberately limited to Dream receivers for now.  Other 4K STBs
 	 * keep their existing grab backend until they are tested separately.
 	 * On Dream boxes route both UHD and HEVC/H.265 through ffmpeg: some HD
-	 * 1920x1080 services are HEVC and fail through the raw grab paths too. */
-	if ((stb_type == BRCM7439 || stb_type == DMNEW) && (w > 1920 || h > 1080 || hevc))
+	 * 1920x1080 services are HEVC and fail through the raw grab paths too.
+	 * On DreamOne/DreamTwo also route PAL SD 720x576-like services through
+	 * ffmpeg, because the native /dev/videograbber path can return corrupted
+	 * SD frames there as well. */
+	if ((stb_type == BRCM7439 || stb_type == DMNEW) && (w > 1920 || h > 1080 || hevc || dmnew_sd576))
 		return 1;
 
 	return 0;
@@ -1692,7 +1707,7 @@ int main(int argc, char **argv)
 			if ((src_w > 1920 || src_h > 1080) && (!width || width > 1920))
 				width = 1920;
 			if (!quiet)
-				fprintf(stderr, "Using ffmpeg backend for Dream HEVC/UHD video capture ...\n");
+				fprintf(stderr, "Using ffmpeg backend for Dream HEVC/UHD/SD video capture ...\n");
 		}
 	}
 
@@ -1751,7 +1766,7 @@ int main(int argc, char **argv)
 		if (use_ffmpeg_video_backend)
 		{
 			if (grab_ffmpeg_getvideo_frame(video, &xres_v, &yres_v, width, NULL) < 0)
-				fprintf(stderr, "ffmpeg backend failed; refusing unsafe raw HEVC/UHD video grab\n");
+				fprintf(stderr, "ffmpeg backend failed; refusing unsafe raw HEVC/UHD/SD video grab\n");
 		}
 		else if (stb_type == BRCM7366 || stb_type == BRCM7251 || stb_type == BRCM7252 || stb_type == BRCM7252S || stb_type == BRCM7444 || stb_type == BRCM72604VU || stb_type == BRCM7278 || stb_type == HISIL_ARM)
 		{
