@@ -43,6 +43,8 @@ Feel free to use the code for your own projects. See LICENSE file for details.
 #include <arpa/inet.h>
 #include <linux/types.h>
 #include <linux/fb.h>
+#include <linux/videodev2.h>
+#include <poll.h>
 #include <sys/stat.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -1065,6 +1067,235 @@ static int grab_ffmpeg_backend_should_autouse(int *src_w, int *src_h)
 }
 
 
+/*
+ * DreamOne/DreamTwo: read the picture back through vdin1 and the amlvideo2
+ * V4L2 device.  This works for every codec, AFBC compressed HEVC included.
+ * The post blend port returns the screen as shown, video and OSD composed by
+ * the hardware.  The VD1 port returns the video layer alone; it lands at the
+ * top left corner of the frame in the size of the video window, so only that
+ * part is copied and the caller places it at the axis position.
+ */
+#define AMLV2_NAME			"amlvideo2"
+#define AMLV2_PORT_VIU1_WB0_VD1		0xa002
+#define AMLV2_PORT_VIU1_WB0_POST_BLEND	0xa007
+#define AMLV2_START_VDIN1		((1U << 28) | (1U << 24))
+#define AMLV2_MAX_WIDTH		3840
+#define AMLV2_BUFFERS		2
+/* above this width a single buffer fits the driver's capture memory */
+#define AMLV2_HD_WIDTH		1920
+
+static char amlvideo2_dev[32];
+
+static int amlvideo2_usable(void)
+{
+	char path[64], name[32];
+	int i;
+
+	if (stb_type != DMNEW)
+		return 0;
+	for (i = 0; i < 64; i++)
+	{
+		snprintf(path, sizeof(path), "/sys/class/video4linux/video%d/name", i);
+		if (grab_read_text_file(path, name, sizeof(name)) == 0 && strcmp(name, AMLV2_NAME) == 0)
+		{
+			snprintf(amlvideo2_dev, sizeof(amlvideo2_dev), "/dev/video%d", i);
+			return access(amlvideo2_dev, R_OK | W_OK) == 0;
+		}
+	}
+	return 0;
+}
+
+/* A driver limited to HD writes an upscaled VD1 layer back only in its source
+ * size; the one with 4K capture sizes also scales the VD1 window correctly. */
+static int amlvideo2_vd1_usable(void)
+{
+	int src_w = 0, src_h = 0, win_l, win_t, win_w = 0, win_h = 0;
+	struct v4l2_format fmt;
+	int fd, uhd = 0;
+
+	fd = open(amlvideo2_dev, O_RDWR);
+	if (fd >= 0)
+	{
+		memset(&fmt, 0, sizeof(fmt));
+		fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+		fmt.fmt.pix.width = 3840;
+		fmt.fmt.pix.height = 2160;
+		fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_BGR24;
+		fmt.fmt.pix.field = V4L2_FIELD_ANY;
+		uhd = ioctl(fd, VIDIOC_TRY_FMT, &fmt) == 0 && fmt.fmt.pix.width >= 3840;
+		close(fd);
+	}
+	return uhd || (aml_pick_axis(&win_l, &win_t, &win_w, &win_h) &&
+	       readIntFromFile("/sys/class/video/frame_width", 10, &src_w) == 0 &&
+	       readIntFromFile("/sys/class/video/frame_height", 10, &src_h) == 0 &&
+	       src_w >= win_w && src_h >= win_h);
+}
+
+static int amlvideo2_dqbuf(int fd, struct v4l2_buffer *b)
+{
+	struct pollfd pfd = { .fd = fd, .events = POLLIN };
+
+	if (poll(&pfd, 1, 2000) <= 0)
+		return -1;
+	memset(b, 0, sizeof(*b));
+	b->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	b->memory = V4L2_MEMORY_MMAP;
+	return ioctl(fd, VIDIOC_DQBUF, b);
+}
+
+static int getvideo_amlvideo2(unsigned char *video, int *xres, int *yres, unsigned int port)
+{
+	char buf[32];
+	int disp_w = 0, disp_h = 0, cap_w, cap_h, fmt_w0, fmt_h0, win_l, win_t, win_w, win_h, w, h, y;
+	int fd, ret = -1, streaming = 0;
+	unsigned int i, count = 0;
+	void *map[AMLV2_BUFFERS] = { NULL };
+	size_t map_len[AMLV2_BUFFERS] = { 0 };
+	unsigned int input = AMLV2_START_VDIN1 | port;
+	int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	struct v4l2_format fmt;
+	struct v4l2_requestbuffers req;
+	struct v4l2_buffer b;
+	unsigned char *row = NULL;
+	size_t row_len;
+
+	if (grab_read_text_file("/sys/class/video/device_resolution", buf, sizeof(buf)) < 0 ||
+	    sscanf(buf, "%dx%d", &disp_w, &disp_h) != 2 || disp_w <= 0 || disp_h <= 0)
+		return -1;
+	cap_w = disp_w;
+	cap_h = disp_h;
+	if (cap_w > AMLV2_MAX_WIDTH)
+	{
+		cap_h = (int)((long long)cap_h * AMLV2_MAX_WIDTH / cap_w) & ~1;
+		cap_w = AMLV2_MAX_WIDTH;
+	}
+	if (port != AMLV2_PORT_VIU1_WB0_VD1 || !aml_pick_axis(&win_l, &win_t, &win_w, &win_h))
+	{
+		win_w = disp_w;
+		win_h = disp_h;
+	}
+	if (win_w > disp_w)
+		win_w = disp_w;
+	if (win_h > disp_h)
+		win_h = disp_h;
+	w = (int)((long long)win_w * cap_w / disp_w);
+	h = (int)((long long)win_h * cap_h / disp_h);
+	/* a scaled down layer leaves two undefined pixels at its right and bottom edge */
+	if (win_w < disp_w || win_h < disp_h)
+	{
+		w -= 2;
+		h -= 2;
+	}
+	w &= ~1;
+	h &= ~1;
+	if (w <= 0 || h <= 0)
+		return -1;
+
+	fmt_w0 = cap_w;
+	fmt_h0 = cap_h;
+	fd = open(amlvideo2_dev, O_RDWR);
+	if (fd < 0)
+		return -1;
+	memset(&fmt, 0, sizeof(fmt));
+	fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	fmt.fmt.pix.width = cap_w;
+	fmt.fmt.pix.height = cap_h;
+	fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_BGR24;
+	fmt.fmt.pix.field = V4L2_FIELD_ANY;
+	memset(&req, 0, sizeof(req));
+	req.count = AMLV2_BUFFERS;
+	req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	req.memory = V4L2_MEMORY_MMAP;
+	if (ioctl(fd, VIDIOC_S_INPUT, &input) < 0 ||
+	    ioctl(fd, VIDIOC_S_FMT, &fmt) < 0)
+		goto out;
+	/* a driver without 4K support clamps the size, scale down to its limit */
+	if ((int)fmt.fmt.pix.width < cap_w || (int)fmt.fmt.pix.height < cap_h)
+	{
+		int max_w = fmt.fmt.pix.width, max_h = fmt.fmt.pix.height;
+
+		if (max_w <= 0 || max_h <= 0)
+			goto out;
+		if ((long long)cap_w * max_h > (long long)cap_h * max_w)
+		{
+			cap_h = (int)((long long)cap_h * max_w / cap_w) & ~1;
+			cap_w = max_w;
+		}
+		else
+		{
+			cap_w = (int)((long long)cap_w * max_h / cap_h) & ~1;
+			cap_h = max_h;
+		}
+		w = (int)((long long)w * cap_w / fmt_w0) & ~1;
+		h = (int)((long long)h * cap_h / fmt_h0) & ~1;
+		fmt.fmt.pix.width = cap_w;
+		fmt.fmt.pix.height = cap_h;
+		if (ioctl(fd, VIDIOC_S_FMT, &fmt) < 0 ||
+		    (int)fmt.fmt.pix.width < cap_w || (int)fmt.fmt.pix.height < cap_h)
+			goto out;
+	}
+	req.count = cap_w > AMLV2_HD_WIDTH ? 1 : AMLV2_BUFFERS;
+	if (ioctl(fd, VIDIOC_REQBUFS, &req) < 0 || req.count == 0)
+		goto out;
+	count = req.count < AMLV2_BUFFERS ? req.count : AMLV2_BUFFERS;
+	for (i = 0; i < count; i++)
+	{
+		memset(&b, 0, sizeof(b));
+		b.index = i;
+		b.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+		b.memory = V4L2_MEMORY_MMAP;
+		if (ioctl(fd, VIDIOC_QUERYBUF, &b) < 0)
+			goto out;
+		/* videobuf only maps shared writable mappings */
+		map[i] = mmap(NULL, b.length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, b.m.offset);
+		if (map[i] == MAP_FAILED)
+		{
+			map[i] = NULL;
+			goto out;
+		}
+		map_len[i] = b.length;
+		if (ioctl(fd, VIDIOC_QBUF, &b) < 0)
+			goto out;
+	}
+	if (ioctl(fd, VIDIOC_STREAMON, &type) < 0)
+		goto out;
+	streaming = 1;
+	/* the first frame can still hold an older picture */
+	if (amlvideo2_dqbuf(fd, &b) < 0 || ioctl(fd, VIDIOC_QBUF, &b) < 0 ||
+	    amlvideo2_dqbuf(fd, &b) < 0 || b.index >= count)
+		goto out;
+	/* the buffer is mapped uncached and faults on unaligned loads, so each
+	 * row goes through an aligned bounce buffer */
+	row_len = ((size_t)w * 3 + 63) & ~(size_t)63;
+	if (row_len > fmt.fmt.pix.bytesperline)
+		row_len = fmt.fmt.pix.bytesperline;
+	if (posix_memalign((void **)&row, 64, row_len) != 0)
+	{
+		row = NULL;
+		goto out;
+	}
+	for (y = 0; y < h; y++)
+	{
+		memcpy(row, (unsigned char *)map[b.index] + (size_t)y * fmt.fmt.pix.bytesperline, row_len);
+		memcpy(video + (size_t)y * w * 3, row, (size_t)w * 3);
+	}
+	*xres = w;
+	*yres = h;
+	ret = 0;
+out:
+	if (ret < 0)
+		fprintf(stderr, "amlvideo2: capture failed (%m)\n");
+	/* stop vdin1 on every path, an open stream keeps it running */
+	if (streaming)
+		ioctl(fd, VIDIOC_STREAMOFF, &type);
+	for (i = 0; i < AMLV2_BUFFERS; i++)
+		if (map[i])
+			munmap(map[i], map_len[i]);
+	free(row);
+	close(fd);
+	return ret;
+}
+
 static const char *grab_ffmpeg_loglevel(void)
 {
 	const char *env = getenv("GRAB_FFMPEG_LOGLEVEL");
@@ -1520,6 +1751,7 @@ int main(int argc, char **argv)
 	resize = &fast_resize;
 
 	osd_only=video_only=use_osd_res=width=use_png=use_jpg=no_aspect=use_letterbox=use_ffmpeg_video_backend=0;
+	int use_amlvideo2 = 0, amlvideo2_vd1 = 0, aml_composited_all = 0;
 	jpg_quality=50;
 	aspect=1;
 
@@ -2086,6 +2318,15 @@ int main(int argc, char **argv)
 	{
 		int src_w = 0, src_h = 0;
 		int auto_ffmpeg = grab_ffmpeg_backend_should_autouse(&src_w, &src_h);
+		use_amlvideo2 = amlvideo2_usable();
+		amlvideo2_vd1 = use_amlvideo2 && amlvideo2_vd1_usable();
+		/* amlvideo2 covers the screen grabs; the raw path reads the remaining
+		 * upscaled video only grabs fine unless the frame is AFBC compressed */
+		if (auto_ffmpeg && use_amlvideo2 && !grab_current_video_is_hevc() && src_w <= 1920 && src_h <= 1080)
+			auto_ffmpeg = 0;
+		/* amlvideo2 returns the picture in display size, up to UHD; ffmpeg
+		 * stays as the fallback */
+		int amlvideo2_grabs = use_amlvideo2 && (!video_only || amlvideo2_vd1);
 		if (auto_ffmpeg)
 		{
 			use_ffmpeg_video_backend = 1;
@@ -2093,9 +2334,9 @@ int main(int argc, char **argv)
 			 * capture plane down to HD so a plain "grab -v" does not generate a
 			 * huge 3840x2160 image. Explicit -r values above HD are clamped later by
 			 * the ffmpeg backend as well. */
-			if ((src_w > 1920 || src_h > 1080) && (!width || width > 1920))
+			if (!amlvideo2_grabs && (src_w > 1920 || src_h > 1080) && (!width || width > 1920))
 				width = 1920;
-			if (!quiet)
+			if (!quiet && !amlvideo2_grabs)
 				fprintf(stderr, "Using ffmpeg backend for Dream HEVC/UHD/SD/IPTV video capture ...\n");
 		}
 	}
@@ -2143,11 +2384,19 @@ int main(int argc, char **argv)
 
 	hisi_grab_request_video_only = video_only;
 
+	if (use_amlvideo2 && !video_only && !osd_only &&
+	    getvideo_amlvideo2(video, &xres_v, &yres_v, AMLV2_PORT_VIU1_WB0_POST_BLEND) == 0)
+	{
+		aml_composited_all = 1;
+		if (!quiet)
+			fprintf(stderr, "Screen grabbed via amlvideo2 (%dx%d)\n", xres_v, yres_v);
+	}
+
 	// get osd
-	if (!video_only && !hisi_composited_all)
+	if (!video_only && !hisi_composited_all && !aml_composited_all)
 		getosd(osd,&xres_o,&yres_o);
 
-	if (!video_only && !hisi_composited_all && (xres_o <= 0 || yres_o <= 0))
+	if (!video_only && !hisi_composited_all && !aml_composited_all && (xres_o <= 0 || yres_o <= 0))
 	{
 		if (osd_only)
 		{
@@ -2164,11 +2413,16 @@ int main(int argc, char **argv)
 	}
 
 	// get video
-	if (!osd_only)
+	if (!osd_only && !aml_composited_all)
 	{
 		if (!quiet)
 			fprintf(stderr, "Grabbing Video ...\n");
-		if (use_ffmpeg_video_backend)
+		if (amlvideo2_vd1 && getvideo_amlvideo2(video, &xres_v, &yres_v, AMLV2_PORT_VIU1_WB0_VD1) == 0)
+		{
+			if (!quiet)
+				fprintf(stderr, "Video grabbed via amlvideo2 (%dx%d)\n", xres_v, yres_v);
+		}
+		else if (use_ffmpeg_video_backend)
 		{
 			if (grab_ffmpeg_getvideo_frame(video, &xres_v, &yres_v, width, NULL) < 0)
 				fprintf(stderr, "ffmpeg backend failed; refusing unsafe raw HEVC/UHD/SD/IPTV video grab\n");
@@ -2216,7 +2470,7 @@ int main(int argc, char **argv)
 		goto post_merge;
 	}
 
-	if (hisi_composited_all)
+	if (hisi_composited_all || aml_composited_all)
 	{
 		if (xres_v <= 0 || yres_v <= 0)
 		{
@@ -2325,6 +2579,18 @@ int main(int argc, char **argv)
 		* ==================================================================== */
 		if (stb_type == DMNEW) {
 			if (aml_pick_axis(&dst_left, &dst_top, &dst_width, &dst_height)) {
+				char res[32];
+				int disp_w = 0, disp_h = 0;
+
+				/* the axis is in display pixels */
+				if (grab_read_text_file("/sys/class/video/device_resolution", res, sizeof(res)) == 0 &&
+				    sscanf(res, "%dx%d", &disp_w, &disp_h) == 2 && disp_w > 0 && disp_h > 0 &&
+				    (disp_w != xres || disp_h != yres)) {
+					dst_left   = (int)((long long)dst_left   * xres / disp_w);
+					dst_width  = (int)((long long)dst_width  * xres / disp_w);
+					dst_top    = (int)((long long)dst_top    * yres / disp_h);
+					dst_height = (int)((long long)dst_height * yres / disp_h);
+				}
 				clamp_rect(&dst_left, &dst_top, &dst_width, &dst_height, xres, yres);
 				dst_is_osd_pixels = 1;
 				aml_axis_active   = 1;
