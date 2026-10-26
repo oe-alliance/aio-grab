@@ -1039,11 +1039,9 @@ static int grab_ffmpeg_backend_should_autouse(int *src_w, int *src_h)
 {
 	int w = 0, h = 0;
 	int hevc;
-	int iptv;
 	int dmnew_sd576;
 	grab_read_current_video_size(&w, &h);
 	hevc = grab_current_video_is_hevc();
-	iptv = grab_current_service_is_iptv();
 	dmnew_sd576 = grab_current_video_is_dmnew_sd576(w, h);
 	if (src_w) *src_w = w;
 	if (src_h) *src_h = h;
@@ -1055,12 +1053,11 @@ static int grab_ffmpeg_backend_should_autouse(int *src_w, int *src_h)
 	 * On DreamOne/DreamTwo also route PAL SD 720x576-like services through
 	 * ffmpeg, because the native /dev/videograbber path can return corrupted
 	 * SD frames there as well.
-	 * On DM900/DM920 also route IPTV service references through ffmpeg.
-	 * Some IPTV services do not expose enough reliable decoder metadata early
-	 * enough for the raw BRCM7439 path decision, while the direct stream URL
-	 * can be decoded cleanly by ffmpeg. */
+	 * DM900/DM920 SD/HD IPTV uses the same decoder-memory layout as DVB.
+	 * Keep it on the native path instead of opening a second stream connection
+	 * solely because the service reference contains a URL. */
 	if ((stb_type == BRCM7439 || stb_type == DMNEW) &&
-	    (w > 1920 || h > 1080 || hevc || dmnew_sd576 || (stb_type == BRCM7439 && iptv)))
+	    (w > 1920 || h > 1080 || hevc || dmnew_sd576))
 		return 1;
 
 	return 0;
@@ -2337,7 +2334,7 @@ int main(int argc, char **argv)
 			if (!amlvideo2_grabs && (src_w > 1920 || src_h > 1080) && (!width || width > 1920))
 				width = 1920;
 			if (!quiet && !amlvideo2_grabs)
-				fprintf(stderr, "Using ffmpeg backend for Dream HEVC/UHD/SD/IPTV video capture ...\n");
+				fprintf(stderr, "Using ffmpeg backend for Dream HEVC/UHD/SD video capture ...\n");
 		}
 	}
 
@@ -2425,7 +2422,7 @@ int main(int argc, char **argv)
 		else if (use_ffmpeg_video_backend)
 		{
 			if (grab_ffmpeg_getvideo_frame(video, &xres_v, &yres_v, width, NULL) < 0)
-				fprintf(stderr, "ffmpeg backend failed; refusing unsafe raw HEVC/UHD/SD/IPTV video grab\n");
+				fprintf(stderr, "ffmpeg backend failed; refusing unsafe raw HEVC/UHD/SD video grab\n");
 		}
 		else if (stb_type == BRCM7366 || stb_type == BRCM7251 || stb_type == BRCM7252 || stb_type == BRCM7252S || stb_type == BRCM7444 || stb_type == BRCM72604VU || stb_type == BRCM7278 || stb_type == HISIL_ARM)
 		{
@@ -4271,7 +4268,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 						memcpy(chroma+dat1,memory_tmp+pageoffset+offset+t2,xsub); // chroma
 					}
 				}
-				if (stb_type == BRCM7439DAGS)
+				else if (stb_type == BRCM7439DAGS)
 				{
 					if (t2 & 0x200)
 					{
