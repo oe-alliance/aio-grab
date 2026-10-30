@@ -682,19 +682,24 @@ static int grab_extract_embedded_stream_url(const char *sref, char *out, size_t 
 	char url[2048];
 	const char *p;
 	int encoded = 0;
+	int round;
 
 	if (!sref || !out || out_len == 0)
 		return -1;
 
-	/* OpenWebif can return IPTV service references double-encoded, for example
-	 * http%253a//host%253a8080/... .  Decode a copy repeatedly before looking
-	 * for the embedded URL so we do not accidentally fall back to
-	 * http://127.0.0.1:8001/<whole service reference>. */
+	/* OpenWebif can return IPTV service references double-encoded.  Stop
+	 * decoding as soon as the URL marker is recognizable: encoded colons
+	 * inside the URL and HTTP headers must remain distinguishable from the
+	 * literal colon separating the URL field from the service name. */
 	snprintf(work, sizeof(work), "%s", sref);
 	grab_xml_unescape_inplace(work);
-	grab_percent_decode_repeat_inplace(work, 4);
-
 	p = grab_find_earliest_url_marker(work, &encoded);
+	for (round = 0; !p && round < 4; ++round)
+	{
+		if (!grab_percent_decode_once_inplace(work))
+			break;
+		p = grab_find_earliest_url_marker(work, &encoded);
+	}
 	if (!p)
 		return -1;
 
