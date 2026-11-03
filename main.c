@@ -52,6 +52,7 @@ Feel free to use the code for your own projects. See LICENSE file for details.
 #include <dirent.h>
 #include <errno.h>
 #include <elf.h>
+#include <endian.h>
 
 #if defined(__sh__)
 #include <sys/time.h>
@@ -1051,18 +1052,12 @@ static int grab_ffmpeg_backend_should_autouse(int *src_w, int *src_h)
 	if (src_w) *src_w = w;
 	if (src_h) *src_h = h;
 
-	/* Scope deliberately limited to Dream receivers for now.  Other 4K STBs
-	 * keep their existing grab backend until they are tested separately.
-	 * On Dream boxes route both UHD and HEVC/H.265 through ffmpeg: some HD
-	 * 1920x1080 services are HEVC and fail through the raw grab paths too.
-	 * On DreamOne/DreamTwo also route PAL SD 720x576-like services through
-	 * ffmpeg, because the native /dev/videograbber path can return corrupted
-	 * SD frames there as well.
-	 * DM900/DM920 SD/HD IPTV uses the same decoder-memory layout as DVB.
-	 * Keep it on the native path instead of opening a second stream connection
-	 * solely because the service reference contains a URL. */
-	if ((stb_type == BRCM7439 || stb_type == DMNEW) &&
-	    (w > 1920 || h > 1080 || hevc || dmnew_sd576))
+	/* DreamOne/DreamTwo only: ffmpeg is the fallback for UHD, HEVC/H.265 and
+	 * PAL SD 720x576-like services when amlvideo2 cannot deliver the picture,
+	 * because the raw /dev/videograbber path can return corrupted frames.
+	 * DM900/DM920 always read the decoder memory directly: getvideo() handles
+	 * UHD and 10-bit pictures there, so no second stream connection is needed. */
+	if (stb_type == DMNEW && (w > 1920 || h > 1080 || hevc || dmnew_sd576))
 		return 1;
 
 	return 0;
@@ -3949,6 +3944,134 @@ void getvideo2(unsigned char *video, int *xres, int *yres)
 	return;
 }
 
+/* Copy physical memory through a cached /dev/mem mapping into a new buffer. */
+static unsigned char *grab_copy_phys(off_t phys, size_t len)
+{
+	off_t pageoffset = phys & 0xfff;
+	unsigned char *copy = NULL;
+	unsigned char *map;
+	int fd = open("/dev/mem", O_RDONLY);
+
+	if (fd < 0)
+		return NULL;
+	map = mmap(0, len + pageoffset, PROT_READ, MAP_SHARED, fd, phys - pageoffset);
+	if (map != MAP_FAILED)
+	{
+		copy = malloc(len);
+		if (copy)
+			memcpy(copy, map + pageoffset, len);
+		munmap(map, len + pageoffset);
+	}
+	close(fd);
+	return copy;
+}
+
+/* Keeps the reads of grab_evict_dcache() from being optimized away. */
+uint32_t grab_evict_sink;
+
+/* The decoder writes its pictures past the CPU caches.  Push out lines that
+ * a previous grab may have left behind for the same buffers by reading more
+ * memory than the L2 cache holds.  Reads are needed: large memsets stream
+ * past the cache without allocating lines. */
+static void grab_evict_dcache(void)
+{
+	const size_t count = 8 * 1024 * 1024 / sizeof(uint32_t);
+	uint32_t *buf = malloc(count * sizeof(uint32_t));
+	uint32_t sum = 0;
+
+	if (!buf)
+		return;
+	memset(buf, 1, count * sizeof(uint32_t));
+	for (size_t i = 0; i < count; i += 8)
+		sum += buf[i];
+	grab_evict_sink = sum;
+	free(buf);
+}
+
+/* Copy the luma and chroma planes the BRCM7439 video feeder currently shows.
+ * Uncached reads take about 0.5 s per UHD plane and the decoder reuses a
+ * buffer right after the display moved on, so copy through a cached mapping,
+ * read the addresses directly before copying and retry when the picture
+ * changed during the copy. */
+static int grab_brcm7439_copy_planes(int mem_fd, size_t luma_len, size_t chroma_len, unsigned char **luma_copy, unsigned char **chroma_copy)
+{
+	void *map = mmap(0, 0x1000, PROT_READ, MAP_SHARED, mem_fd, registeroffset);
+	const volatile uint32_t *regs;
+	unsigned char *luma_buf = NULL;
+	unsigned char *chroma_buf = NULL;
+
+	if (map == MAP_FAILED)
+		return -1;
+	regs = map;
+	grab_evict_dcache();
+	for (int attempt = 0; attempt < 4; attempt++)
+	{
+		uint32_t luma_adr = regs[0x34 / 4] & 0xffffff00;
+		uint32_t chroma_adr = regs[0x3c / 4] & 0xffffff00;
+		free(luma_buf);
+		free(chroma_buf);
+		luma_buf = grab_copy_phys(luma_adr, luma_len);
+		chroma_buf = grab_copy_phys(chroma_adr, chroma_len);
+		if (!luma_buf || !chroma_buf || (regs[0x34 / 4] & 0xffffff00) == luma_adr)
+			break;
+	}
+	munmap(map, 0x1000);
+	if (!luma_buf || !chroma_buf)
+	{
+		free(luma_buf);
+		free(chroma_buf);
+		return -1;
+	}
+	*luma_copy = luma_buf;
+	*chroma_copy = chroma_buf;
+	return 0;
+}
+
+/* 8-bit samples are stored byte swapped per 32-bit word. */
+static int grab_brcm7439_put8(const unsigned char *row, unsigned char *out, int x, int width)
+{
+	int n = width - x < 0x80 ? width - x : 0x80;
+
+	for (int i = 0; i < n; i++)
+		out[x + i] = row[i ^ 3];
+	return x + n;
+}
+
+/* 10-bit pictures pack three samples into each little-endian 32-bit word. */
+static int grab_brcm7439_put10(const unsigned char *row, unsigned char *out, int x, int width)
+{
+	const uint32_t *words = (const uint32_t *)row;
+	int n = width - x < 0x60 ? width - x : 0x60;
+
+	for (int i = 0; i < n; i++)
+		out[x + i] = (le32toh(words[i / 3]) >> (10 * (i % 3) + 2)) & 0xff;
+	return x + n;
+}
+
+/* Turn a BRCM7439 decoder plane into one 8-bit plane in display order.  The
+ * plane is stored in stripes 128 bytes wide and all lines high, and every
+ * second pair of lines swaps neighbouring 32-byte blocks. */
+static void grab_brcm7439_unstripe(const unsigned char *src, int row_bytes, int lines, int tenbit, unsigned char *dst, int width)
+{
+	int stripes = row_bytes / 0x80;
+
+	#pragma omp parallel for
+	for (int y = 0; y < lines; y++)
+	{
+		unsigned char *out = dst + (size_t)y * width;
+		int swap = (y & 2) ? 1 : 0;
+		int x = 0;
+		for (int s = 0; s < stripes; s++)
+		{
+			const unsigned char *line = src + ((size_t)s * lines + y) * 0x80;
+			unsigned char row[0x80] __attribute__((aligned(4)));
+			for (int b = 0; b < 4; b++)
+				memcpy(row + b * 0x20, line + (b ^ swap) * 0x20, 0x20);
+			x = tenbit ? grab_brcm7439_put10(row, out, x, width) : grab_brcm7439_put8(row, out, x, width);
+		}
+	}
+}
+
 void getvideo(unsigned char *video, int *xres, int *yres)
 {
 	int mem_fd;
@@ -3981,6 +4104,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 
 		off_t adr, adr2, ofs, ofs2, offset, pageoffset;
 		int xtmp,xsub,ytmp,t2,dat1;
+		int tenbit = 0;
 
 /* The unsigned int(0) is present in some lines here to ensure that the
  * "item << 24" doesn't result in sign extension if item has the top-bit
@@ -3994,6 +4118,7 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			adr2 = (unsigned int)0 | data[chr_luma_register_offset + 3] << 24 | data[chr_luma_register_offset + 2] << 16 | data[chr_luma_register_offset + 1] << 8;
 			stride = data[0x19] << 8 | data[0x18];
 			adr = (unsigned int)0 | data[0x37] << 24 | data[0x36] << 16 | data[0x35] << 8; /* start of videomem */
+			tenbit = stb_type == BRCM7439 && data[0x20] == 3;
 		} else {
 			ofs = data[chr_luma_register_offset + 8] << 4; /* luma lines */
 			ofs2 = data[chr_luma_register_offset + 12] << 4; /* chroma lines */
@@ -4029,7 +4154,24 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 
 		int memory_tmp_size = 0;
 		// grabbing luma & chroma plane from the decoder memory
-		if (!mem2memdma_register)
+		if (!mem2memdma_register && stb_type == BRCM7439)
+		{
+			/* UHD pictures keep luma and chroma on different memory controllers,
+			 * so copy both planes separately instead of one span from luma. */
+			int row_bytes = ((tenbit ? (stride + 2) / 3 * 4 : stride) + 0x7f) & ~0x7f;
+			unsigned char *chroma_copy;
+			if (grab_brcm7439_copy_planes(mem_fd, (size_t)row_bytes * ofs, (size_t)row_bytes * ofs2, &memory_tmp, &chroma_copy) < 0)
+			{
+				fprintf(stderr, "Mainmemory: <Memmapping failed 2>\n");
+				return;
+			}
+			grab_brcm7439_unstripe(memory_tmp, row_bytes, ofs, tenbit, luma, stride);
+			grab_brcm7439_unstripe(chroma_copy, row_bytes, ofs2, tenbit, chroma, stride);
+			free(memory_tmp);
+			free(chroma_copy);
+			goto planes_ready;
+		}
+		else if (!mem2memdma_register)
 		{
 			// we have direct access to the decoder memory
 			memory_tmp_size = offset + (stride + chr_luma_stride) * ofs2;
@@ -4392,6 +4534,8 @@ void getvideo(unsigned char *video, int *xres, int *yres)
 			SWAP(p[0], p[3]);
 			SWAP(p[1], p[2]);
 		}
+planes_ready:
+		;
 	}
 	else if (stb_type == DMNEW)
 	{
